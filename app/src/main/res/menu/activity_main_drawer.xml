@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:showIn="navigation_view">
+
+    <group>
+        <item android:id="@+id/userProfileActivity2"
+            android:icon="@drawable/account_circle_24px"
+            android:title="Профиль"/>
+
+
+        <item
+            android:id="@+id/nav_home"
+            android:icon="@drawable/ic_menu_camera"
+            android:title="Главная" />
+        <item
+            android:id="@+id/nav_gallery"
+            android:icon="@drawable/ic_menu_slideshow"
+            android:title="Документы" />
+        <item
+            android:id="@+id/nav_slideshow"
+            android:icon="@drawable/ic_menu_gallery"
+            android:title="Галерея" />
+
+        <item
+            android:id="@+id/Saves"
+            android:icon="@drawable/saves_item"
+            android:title="Избранное"
+            />
+        <!-- Добавьте этот пункт -->
+        <item
+            android:id="@+id/nav_settings"
+            android:icon="@drawable/ic_offlane"
+            android:title="Настройки" />
+    </group>
+
+
+</menu>
