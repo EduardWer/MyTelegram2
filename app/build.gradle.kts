@@ -40,8 +40,15 @@ android {
 
 dependencies {
 
+    implementation ("com.google.firebase:firebase-analytics")
+    implementation ("com.google.firebase:firebase-auth")
+    implementation ("com.google.firebase:firebase-database")
+    implementation ("com.google.firebase:firebase-messaging")
 
 
+    implementation (platform("com.google.firebase:firebase-bom:32.8.0"))
+    implementation ("com.google.firebase:firebase-messaging:23.4.1")
+    implementation ("com.google.firebase:firebase-analytics:21.5.1")
 
 
     implementation(libs.appcompat)

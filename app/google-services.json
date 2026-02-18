@@ -1,6 +1,7 @@
 {
   "project_info": {
     "project_number": "313970106645",
+    "firebase_url": "https://mytelegram2-default-rtdb.firebaseio.com",
     "project_id": "mytelegram2",
     "storage_bucket": "mytelegram2.firebasestorage.app"
   },

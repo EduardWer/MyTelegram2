@@ -1,6 +1,12 @@
 package com.example.mytelegram.ui.home;
 
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Log;
@@ -12,7 +18,9 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
+import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -78,32 +86,72 @@ public class HomeFragment extends Fragment {
         progressBar = view.findViewById(R.id.progressBar);
 
         setupRecyclerView();
+        setupSwipeToDelete();
+
+
+
+
         loadUserChats();
     }
+    private void setupSwipeToDelete() {
+        ItemTouchHelper.SimpleCallback swipeCallback = new ItemTouchHelper.SimpleCallback(
+                0, ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT) {
 
-    @Override
-    public void onDestroyView() {
-        super.onDestroyView();
-        if (loadedChats != null && !loadedChats.isEmpty()) {
-            for (Chat chat : loadedChats.values()) {
-                chat.setUnreadCount(0); // Сбрасываем локальный счетчик
+            @Override
+            public boolean onMove(@NonNull RecyclerView recyclerView,
+                                  @NonNull RecyclerView.ViewHolder viewHolder,
+                                  @NonNull RecyclerView.ViewHolder target) {
+                return false;
             }
-            updateAdapter();
-        }
+
+            @Override
+            public void onSwiped(@NonNull RecyclerView.ViewHolder viewHolder, int direction) {
+                int position = viewHolder.getAdapterPosition();
+                if (position >= 0 && position < adapter.getChats().size()) {
+                    Chat chat = adapter.getChats().get(position);
+                    showDeleteDialog(chat, position);
+                }
+                adapter.notifyItemChanged(position); // Возвращаем элемент на место
+            }
+
+            @Override
+            public void onChildDraw(@NonNull Canvas c, @NonNull RecyclerView recyclerView,
+                                    @NonNull RecyclerView.ViewHolder viewHolder,
+                                    float dX, float dY, int actionState, boolean isCurrentlyActive) {
+
+                View itemView = viewHolder.itemView;
+                Paint p = new Paint();
+
+                if (dX > 0) {
+                    // Свайп вправо - удаление (красный фон)
+                    p.setColor(Color.RED);
+                    c.drawRect(itemView.getLeft(), itemView.getTop(), dX,
+                            itemView.getBottom(), p);
+
+                    // Иконка корзины
+                    Drawable deleteIcon = ContextCompat.getDrawable(requireContext(),
+                            R.drawable.ic_delate);
+                    if (deleteIcon != null) {
+                        int iconMargin = (itemView.getHeight() - deleteIcon.getIntrinsicHeight()) / 2;
+                        int iconTop = itemView.getTop() + iconMargin;
+                        int iconBottom = iconTop + deleteIcon.getIntrinsicHeight();
+                        int iconLeft = itemView.getLeft() + iconMargin;
+                        int iconRight = iconLeft + deleteIcon.getIntrinsicWidth();
+                        deleteIcon.setBounds(iconLeft, iconTop, iconRight, iconBottom);
+                        deleteIcon.draw(c);
+                    }
+                }
+                super.onChildDraw(c, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive);
+            }
+        };
+
+        ItemTouchHelper itemTouchHelper = new ItemTouchHelper(swipeCallback);
+        itemTouchHelper.attachToRecyclerView(recyclerView);
     }
 
 
-    @Override
-    public void onResume() {
-        super.onResume();
-        // Принудительно обновляем список чатов
-        if (loadedChats != null && !loadedChats.isEmpty()) {
-            for (Chat chat : loadedChats.values()) {
-                chat.setUnreadCount(0); // Сбрасываем локальный счетчик
-            }
-            updateAdapter();
-        }
-    }
+
+
 
 
 
@@ -209,14 +257,15 @@ public class HomeFragment extends Fragment {
 
         if (messagesNode.exists()) {
             for (DataSnapshot messageSnapshot : messagesNode.getChildren()) {
-                Map<String, Object> messageData = (Map<String, Object>) messageSnapshot.getValue();
-
+                // Безопасный способ получить данные
+                Map<String, Object> messageData = getMessageDataSafely(messageSnapshot);
                 if (messageData == null) continue;
 
-                String messageText = (String) messageData.get("text");
-                Long timestampObj = (Long) messageData.get("timestamp");
-                String senderId = (String) messageData.get("senderId");
-                String messageType = (String) messageData.get("messageType");
+                // Извлекаем данные с проверкой типов
+                String messageText = safeCastToString(messageData.get("text"));
+                Long timestampObj = safeCastToLong(messageData.get("timestamp"));
+                String senderId = safeCastToString(messageData.get("senderId"));
+                String messageType = safeCastToString(messageData.get("messageType"));
 
                 long timestamp = timestampObj != null ? timestampObj : 0;
 
@@ -227,18 +276,11 @@ public class HomeFragment extends Fragment {
                     lastSenderId = senderId;
                 }
 
-                // ИСПРАВЛЕННЫЙ ПОДСЧЕТ НЕПРОЧИТАННЫХ:
-                // Сообщение считается непрочитанным ТОЛЬКО если:
-                // 1. Отправлено собеседником (не мной)
-                // 2. Я его еще не прочитал
-
+                // Подсчет непрочитанных
                 if (senderId != null && !senderId.equals(currentUserId)) {
-                    // Проверяем, прочитал ли Я это сообщение
-                    boolean isReadByMe = isMessageReadByMe(messageData, currentUserId);
+                    boolean isReadByMe = checkMessageReadStatus(messageData, currentUserId);
                     if (!isReadByMe) {
                         unreadCount++;
-                        Log.d(TAG, "Непрочитанное от собеседника: " + messageText +
-                                ", прочитано мной: " + isReadByMe);
                     }
                 }
             }
@@ -252,6 +294,94 @@ public class HomeFragment extends Fragment {
         chat.setLastMessageTime(formatTimestamp(lastTimestamp));
 
         updateAdapter();
+    }
+
+    private Map<String, Object> getMessageDataSafely(DataSnapshot snapshot) {
+        try {
+            Object value = snapshot.getValue();
+            if (value instanceof Map) {
+                return (Map<String, Object>) value;
+            }
+            return null;
+        } catch (ClassCastException e) {
+            Log.e(TAG, "Не удалось преобразовать в Map: " + snapshot.getKey(), e);
+            return null;
+        }
+    }
+
+    private String safeCastToString(Object obj) {
+        return obj instanceof String ? (String) obj : null;
+    }
+
+    private Long safeCastToLong(Object obj) {
+        if (obj instanceof Long) return (Long) obj;
+        if (obj instanceof Integer) return ((Integer) obj).longValue();
+        return null;
+    }
+
+    private boolean checkMessageReadStatus(Map<String, Object> messageData, String userId) {
+        // Проверяем readBy
+        Object readBy = messageData.get("readBy");
+        if (readBy instanceof Map) {
+            Object status = ((Map) readBy).get(userId);
+            return status instanceof Boolean && (Boolean) status;
+        }
+
+        // Проверяем isRead
+        Object isRead = messageData.get("isRead");
+        return isRead instanceof Boolean && (Boolean) isRead;
+    }
+
+
+    private void showDeleteDialog(Chat chat, int position) {
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Удалить чат")
+                .setMessage("Вы уверены, что хотите удалить чат с " + chat.getParticipantName() + "?")
+                .setPositiveButton("Удалить", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        deleteChat(chat, position);
+                    }
+                })
+                .setNegativeButton("Отмена", null)
+
+                .show();
+    }
+
+    // Метод удаления чата
+    private void deleteChat(Chat chat, int position) {
+        String chatId = chat.getChatId();
+
+        // 1. Удаляем из локального списка
+        loadedChats.remove(chatId);
+        List<Chat> currentChats = adapter.getChats();
+        if (position < currentChats.size()) {
+            currentChats.remove(position);
+            adapter.setChats(currentChats);
+        }
+
+        // 2. Удаляем из Firebase
+        databaseReference.child("chats").child(chatId).removeValue()
+                .addOnSuccessListener(aVoid -> {
+                    Toast.makeText(getContext(), "Чат удален", Toast.LENGTH_SHORT).show();
+
+                    // Также можно удалить сообщения
+                    deleteChatMessages(chatId);
+                })
+                .addOnFailureListener(e -> {
+                    Toast.makeText(getContext(), "Ошибка удаления чата", Toast.LENGTH_SHORT).show();
+                    Log.e(TAG, "Error deleting chat: " + e.getMessage());
+                });
+    }
+
+    private void deleteChatMessages(String chatId) {
+        databaseReference.child("chats").child(chatId).child("messages").removeValue()
+                .addOnSuccessListener(aVoid -> {
+                    Log.d(TAG, "Messages deleted for chat: " + chatId);
+                })
+                .addOnFailureListener(e -> {
+                    Log.e(TAG, "Error deleting messages: " + e.getMessage());
+                });
     }
 
     private boolean isMessageReadByMe(Map<String, Object> messageData, String myId) {
