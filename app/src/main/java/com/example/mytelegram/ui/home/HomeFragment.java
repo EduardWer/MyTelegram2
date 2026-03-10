@@ -88,14 +88,13 @@ public class HomeFragment extends Fragment {
         setupRecyclerView();
         setupSwipeToDelete();
 
-
-
-
         loadUserChats();
     }
     private void setupSwipeToDelete() {
         ItemTouchHelper.SimpleCallback swipeCallback = new ItemTouchHelper.SimpleCallback(
-                0, ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT) {
+                0, ItemTouchHelper.LEFT) {
+
+            private static final float SWIPE_THRESHOLD_FOR_ICON = 0.3f; // 30% от ширины элемента
 
             @Override
             public boolean onMove(@NonNull RecyclerView recyclerView,
@@ -111,7 +110,7 @@ public class HomeFragment extends Fragment {
                     Chat chat = adapter.getChats().get(position);
                     showDeleteDialog(chat, position);
                 }
-                adapter.notifyItemChanged(position); // Возвращаем элемент на место
+                adapter.notifyItemChanged(position);
             }
 
             @Override
@@ -120,36 +119,55 @@ public class HomeFragment extends Fragment {
                                     float dX, float dY, int actionState, boolean isCurrentlyActive) {
 
                 View itemView = viewHolder.itemView;
-                Paint p = new Paint();
 
-                if (dX > 0) {
-                    // Свайп вправо - удаление (красный фон)
+                // Только для свайпа влево
+                if (dX < 0) {
+                    float swipeProgress = Math.abs(dX) / itemView.getWidth(); // Прогресс свайпа (0-1)
+
+                    // Красный фон справа
+                    Paint p = new Paint();
                     p.setColor(Color.RED);
-                    c.drawRect(itemView.getLeft(), itemView.getTop(), dX,
-                            itemView.getBottom(), p);
+                    c.drawRect(itemView.getRight() + dX, itemView.getTop(),
+                            itemView.getRight(), itemView.getBottom(), p);
 
-                    // Иконка корзины
-                    Drawable deleteIcon = ContextCompat.getDrawable(requireContext(),
-                            R.drawable.ic_delate);
-                    if (deleteIcon != null) {
-                        int iconMargin = (itemView.getHeight() - deleteIcon.getIntrinsicHeight()) / 2;
-                        int iconTop = itemView.getTop() + iconMargin;
-                        int iconBottom = iconTop + deleteIcon.getIntrinsicHeight();
-                        int iconLeft = itemView.getLeft() + iconMargin;
-                        int iconRight = iconLeft + deleteIcon.getIntrinsicWidth();
-                        deleteIcon.setBounds(iconLeft, iconTop, iconRight, iconBottom);
-                        deleteIcon.draw(c);
+                    // Показываем иконку только если свайпнули достаточно далеко
+                    if (swipeProgress > SWIPE_THRESHOLD_FOR_ICON) {
+                        Drawable deleteIcon = ContextCompat.getDrawable(requireContext(),
+                                R.drawable.ic_delate);
+                        if (deleteIcon != null) {
+                            int iconSize = deleteIcon.getIntrinsicWidth();
+                            int iconMargin = (itemView.getHeight() - iconSize) / 2;
+
+                            // Рассчитываем прозрачность иконки в зависимости от прогресса свайпа
+                            float alphaProgress = (swipeProgress - SWIPE_THRESHOLD_FOR_ICON) /
+                                    (1 - SWIPE_THRESHOLD_FOR_ICON);
+                            int alpha = (int) (255 * Math.min(1, alphaProgress));
+                            deleteIcon.setAlpha(alpha);
+
+                            // Позиция иконки (появляется от края)
+                            int iconRight = itemView.getRight() - iconMargin;
+                            int iconLeft = iconRight - iconSize;
+                            int iconTop = itemView.getTop() + (itemView.getHeight() - iconSize) / 2;
+                            int iconBottom = iconTop + iconSize;
+
+                            deleteIcon.setBounds(iconLeft, iconTop, iconRight, iconBottom);
+                            deleteIcon.draw(c);
+                        }
                     }
                 }
+
                 super.onChildDraw(c, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive);
+            }
+
+            @Override
+            public float getSwipeThreshold(@NonNull RecyclerView.ViewHolder viewHolder) {
+                return 0.7f; // Порог срабатывания свайпа
             }
         };
 
         ItemTouchHelper itemTouchHelper = new ItemTouchHelper(swipeCallback);
         itemTouchHelper.attachToRecyclerView(recyclerView);
     }
-
-
 
 
 
