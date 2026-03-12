@@ -20,7 +20,6 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.bumptech.glide.Glide;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.DataSnapshot;
@@ -86,12 +85,7 @@ public class ChouseContactActivity extends AppCompatActivity {
     }
 
     private void setupRecyclerView() {
-        adapter = new ContactAdapter(filteredContacts, new ContactAdapter.OnContactClickListener() {
-            @Override
-            public void onContactClick(User user) {
-                createOrOpenChat(user);
-            }
-        });
+        adapter = new ContactAdapter(filteredContacts, this::createOrOpenChat);
 
         contactsRecyclerView.setLayoutManager(new LinearLayoutManager(this));
         contactsRecyclerView.setAdapter(adapter);

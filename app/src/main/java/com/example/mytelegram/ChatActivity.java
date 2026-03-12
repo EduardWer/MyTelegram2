@@ -1,6 +1,8 @@
 package com.example.mytelegram;
 
+import android.content.Context;
 import android.content.Intent;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -19,6 +21,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
@@ -26,6 +29,8 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.request.target.CustomTarget;
+import com.bumptech.glide.request.transition.Transition;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.DataSnapshot;
@@ -50,7 +55,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import androidx.activity.ComponentActivity;
 
 public class ChatActivity extends AppCompatActivity {
     private static final String TAG = "ChatActivity";
@@ -167,7 +171,6 @@ public class ChatActivity extends AppCompatActivity {
                 .child("userChats");
     }
 
-
     private void initViews() {
         // Верхняя панель
         backButton = findViewById(R.id.backButton);
@@ -178,7 +181,6 @@ public class ChatActivity extends AppCompatActivity {
         // Сообщения
         messagesRecyclerView = findViewById(R.id.recyclerViewMessages);
         progressBar = findViewById(R.id.progressBar);
-
 
         // Панель ввода
         messageEditText = findViewById(R.id.messageEditText);
@@ -364,7 +366,6 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
-        // Создаем final копии переменных для использования в лямбда-выражении
         final String finalFileName = originalFileName;
         final File finalTempFile = tempFile;
 
@@ -572,11 +573,6 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void updateLastMessageInfo(String lastMessage, long timestamp, String messageType) {
-        // Создаем final копии для использования в лямбда-выражении
-        final String finalLastMessage = lastMessage;
-        final long finalTimestamp = timestamp;
-        final String finalMessageType = messageType;
-
         userChatsRef.child(currentUserId).child(recipientId).child("lastMessage").setValue(lastMessage);
         userChatsRef.child(currentUserId).child(recipientId).child("timestamp").setValue(timestamp);
         userChatsRef.child(currentUserId).child(recipientId).child("lastMessageSenderId").setValue(currentUserId);
@@ -610,7 +606,6 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void markMessagesAsRead() {
-        // Помечаем как прочитанные только сообщения, которые ВИДНЫ на экране
         LinearLayoutManager layoutManager = (LinearLayoutManager) messagesRecyclerView.getLayoutManager();
         if (layoutManager == null) return;
 
@@ -630,13 +625,11 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void markSingleMessageAsRead(Message message) {
-        // Помечаем только сообщения от собеседника, которые еще не прочитаны
         if (!message.getSenderId().equals(currentUserId) &&
                 !message.isReadByUser(currentUserId)) {
 
             message.markAsRead(currentUserId);
 
-            // Обновляем в Firebase
             Map<String, Object> updates = new HashMap<>();
             updates.put("readBy", message.getReadBy());
             updates.put("isRead", message.isRead());
@@ -650,6 +643,7 @@ public class ChatActivity extends AppCompatActivity {
                     });
         }
     }
+
     private void updateUnreadCount() {
         userChatsRef.child(currentUserId).child(recipientId).child("unreadCount").setValue(0);
     }
@@ -935,57 +929,88 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // Внутренний класс адаптера для сообщений с функцией скачивания
+    // Внутренний класс адаптера для сообщений с поддержкой фото
     private class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
-        private static final int TYPE_SENT = 1;
-        private static final int TYPE_RECEIVED = 2;
+        private static final int TYPE_SENT_TEXT = 1;
+        private static final int TYPE_RECEIVED_TEXT = 2;
+        private static final int TYPE_SENT_IMAGE = 3;
+        private static final int TYPE_RECEIVED_IMAGE = 4;
+        private static final int TYPE_SENT_VIDEO = 5;
+        private static final int TYPE_RECEIVED_VIDEO = 6;
+        private static final int TYPE_SENT_DOCUMENT = 7;
+        private static final int TYPE_RECEIVED_DOCUMENT = 8;
 
         private List<Message> messagesList;
         private String currentUserId;
+        private Context context;
 
         public MessageAdapter(List<Message> messagesList, String currentUserId) {
             this.messagesList = messagesList;
             this.currentUserId = currentUserId;
         }
 
+        public void setMessages(List<Message> messages) {
+            this.messagesList = messages;
+            notifyDataSetChanged();
+        }
+
         @Override
         public int getItemViewType(int position) {
-            if (position < 0 || position >= messagesList.size()) {
-                return TYPE_SENT;
-            }
-
             Message message = messagesList.get(position);
-            if (message.getSenderId().equals(currentUserId)) {
-                return TYPE_SENT;
-            } else {
-                return TYPE_RECEIVED;
+            boolean isSent = message.getSenderId().equals(currentUserId);
+
+            if (message.isTextMessage()) {
+                return isSent ? TYPE_SENT_TEXT : TYPE_RECEIVED_TEXT;
+            } else if (message.isImageMessage()) {
+                return isSent ? TYPE_SENT_IMAGE : TYPE_RECEIVED_IMAGE;
+            } else if (message.isVideoMessage()) {
+                return isSent ? TYPE_SENT_VIDEO : TYPE_RECEIVED_VIDEO;
+            } else if (message.isDocumentMessage()) {
+                return isSent ? TYPE_SENT_DOCUMENT : TYPE_RECEIVED_DOCUMENT;
             }
+            return isSent ? TYPE_SENT_TEXT : TYPE_RECEIVED_TEXT;
         }
 
         @NonNull
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
             LayoutInflater inflater = LayoutInflater.from(parent.getContext());
-            if (viewType == TYPE_SENT) {
-                View view = inflater.inflate(R.layout.item_message_send, parent, false);
-                return new SentMessageViewHolder(view);
-            } else {
-                View view = inflater.inflate(R.layout.item_message_received, parent, false);
-                return new ReceivedMessageViewHolder(view);
+            context = parent.getContext();
+
+            switch (viewType) {
+                case TYPE_SENT_IMAGE:
+                    View sentImageView = inflater.inflate(R.layout.item_image_sent, parent, false);
+                    return new SentImageViewHolder(sentImageView);
+
+                case TYPE_RECEIVED_IMAGE:
+                    View receivedImageView = inflater.inflate(R.layout.item_image_received, parent, false);
+                    return new ReceivedImageViewHolder(receivedImageView);
+
+                case TYPE_SENT_TEXT:
+                    View sentTextView = inflater.inflate(R.layout.item_message_send, parent, false);
+                    return new SentMessageViewHolder(sentTextView);
+
+                case TYPE_RECEIVED_TEXT:
+                    View receivedTextView = inflater.inflate(R.layout.item_message_received, parent, false);
+                    return new ReceivedMessageViewHolder(receivedTextView);
+
+                default:
+                    View defaultView = inflater.inflate(R.layout.item_message_send, parent, false);
+                    return new SentMessageViewHolder(defaultView);
             }
         }
 
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-            if (position < 0 || position >= messagesList.size()) {
-                return;
-            }
-
             Message message = messagesList.get(position);
 
-            if (holder.getItemViewType() == TYPE_SENT) {
+            if (holder instanceof SentImageViewHolder) {
+                ((SentImageViewHolder) holder).bind(message);
+            } else if (holder instanceof ReceivedImageViewHolder) {
+                ((ReceivedImageViewHolder) holder).bind(message);
+            } else if (holder instanceof SentMessageViewHolder) {
                 ((SentMessageViewHolder) holder).bind(message);
-            } else {
+            } else if (holder instanceof ReceivedMessageViewHolder) {
                 ((ReceivedMessageViewHolder) holder).bind(message);
             }
         }
@@ -995,12 +1020,115 @@ public class ChatActivity extends AppCompatActivity {
             return messagesList.size();
         }
 
-        public void setMessages(List<Message> messages) {
-            this.messagesList = messages;
-            notifyDataSetChanged();
+        // ViewHolder для отправленных изображений
+        class SentImageViewHolder extends RecyclerView.ViewHolder {
+            private ImageView imageMessage;
+            private TextView messageTime;
+            private ProgressBar imageProgress;
+
+            public SentImageViewHolder(@NonNull View itemView) {
+                super(itemView);
+                imageMessage = itemView.findViewById(R.id.imageMessage);
+                messageTime = itemView.findViewById(R.id.messageTime);
+                imageProgress = itemView.findViewById(R.id.imageProgress);
+            }
+
+            public void bind(Message message) {
+                String imageUrl = message.getFileUrl();
+                messageTime.setText(formatTime(message.getTimestamp()));
+
+                if (imageUrl != null && !imageUrl.isEmpty()) {
+                    imageProgress.setVisibility(View.VISIBLE);
+
+                    Glide.with(context)
+                            .load(imageUrl)
+                            .placeholder(R.drawable.ic_image_placeholder)
+                            .error(R.drawable.ic_broken_image)
+                            .centerCrop()
+                            .into(new CustomTarget<Drawable>() {
+                                @Override
+                                public void onResourceReady(@NonNull Drawable resource, @Nullable Transition<? super Drawable> transition) {
+                                    imageProgress.setVisibility(View.GONE);
+                                    imageMessage.setImageDrawable(resource);
+                                }
+
+                                @Override
+                                public void onLoadCleared(@Nullable Drawable placeholder) {
+                                    imageProgress.setVisibility(View.GONE);
+                                }
+
+                                @Override
+                                public void onLoadFailed(@Nullable Drawable errorDrawable) {
+                                    super.onLoadFailed(errorDrawable);
+                                    imageProgress.setVisibility(View.GONE);
+                                    imageMessage.setImageDrawable(errorDrawable);
+                                }
+                            });
+
+                    imageMessage.setOnClickListener(v -> {
+                        Intent intent = new Intent(context, FullImageActivity.class);
+                        intent.putExtra("image_url", imageUrl);
+                        context.startActivity(intent);
+                    });
+                }
+            }
         }
 
-        // ViewHolder для отправленных сообщений
+        // ViewHolder для полученных изображений
+        class ReceivedImageViewHolder extends RecyclerView.ViewHolder {
+            private ImageView imageMessage;
+            private TextView messageTime;
+            private ProgressBar imageProgress;
+
+            public ReceivedImageViewHolder(@NonNull View itemView) {
+                super(itemView);
+                imageMessage = itemView.findViewById(R.id.imageMessage);
+                messageTime = itemView.findViewById(R.id.messageTime);
+                imageProgress = itemView.findViewById(R.id.imageProgress);
+            }
+
+            public void bind(Message message) {
+                String imageUrl = message.getFileUrl();
+                messageTime.setText(formatTime(message.getTimestamp()));
+
+                if (imageUrl != null && !imageUrl.isEmpty()) {
+                    imageProgress.setVisibility(View.VISIBLE);
+
+                    Glide.with(context)
+                            .load(imageUrl)
+                            .placeholder(R.drawable.ic_image_placeholder)
+                            .error(R.drawable.ic_broken_image)
+                            .centerCrop()
+                            .into(new CustomTarget<Drawable>() {
+                                @Override
+                                public void onResourceReady(@NonNull Drawable resource, @Nullable Transition<? super Drawable> transition) {
+                                    imageProgress.setVisibility(View.GONE);
+                                    imageMessage.setImageDrawable(resource);
+                                }
+
+                                @Override
+                                public void onLoadCleared(@Nullable Drawable placeholder) {
+                                    imageProgress.setVisibility(View.GONE);
+                                }
+
+                                @Override
+                                public void onLoadFailed(@Nullable Drawable errorDrawable) {
+                                    super.onLoadFailed(errorDrawable);
+                                    imageProgress.setVisibility(View.GONE);
+                                    imageMessage.setImageDrawable(errorDrawable);
+                                }
+                            });
+
+                    imageMessage.setOnClickListener(v -> {
+                        Intent intent = new Intent(context, FullImageActivity.class);
+                        intent.putExtra("image_url", imageUrl);
+                        context.startActivity(intent);
+                    });
+                }
+            }
+        }
+
+        // ViewHolder для отправленных текстовых сообщений
         class SentMessageViewHolder extends RecyclerView.ViewHolder {
             private TextView messageText;
             private TextView messageTime;
@@ -1036,7 +1164,7 @@ public class ChatActivity extends AppCompatActivity {
             }
         }
 
-        // ViewHolder для полученных сообщений
+        // ViewHolder для полученных текстовых сообщений
         class ReceivedMessageViewHolder extends RecyclerView.ViewHolder {
             private TextView messageText;
             private TextView messageTime;
@@ -1053,20 +1181,17 @@ public class ChatActivity extends AppCompatActivity {
                     if (position != RecyclerView.NO_POSITION && position < messagesList.size()) {
                         Message message = messagesList.get(position);
 
-                        // Если это файл (изображение, видео, документ) - сразу скачиваем
                         if (message.isImageMessage() || message.isVideoMessage() || message.isDocumentMessage()) {
                             String fileUrl = message.getFileUrl();
                             String fileName = message.getFileName();
                             String messageType = message.getMessageType();
 
                             if (fileUrl != null && !fileUrl.isEmpty()) {
-                                // Сразу начинаем скачивание без диалога
                                 downloadFile(fileUrl, fileName, messageType);
                             } else {
                                 Toast.makeText(itemView.getContext(), "Файл не найден", Toast.LENGTH_SHORT).show();
                             }
                         } else {
-                            // Для текстовых сообщений можно показать опции
                             Toast.makeText(itemView.getContext(), "Текстовое сообщение", Toast.LENGTH_SHORT).show();
                         }
                     }
@@ -1158,7 +1283,6 @@ public class ChatActivity extends AppCompatActivity {
         builder.show();
     }
 
-
     private String getAlbumFolderForFileType(String fileType) {
         switch (fileType) {
             case "image":
@@ -1179,19 +1303,16 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
-        // Генерируем имя файла если оно не указано
         if (fileName == null || fileName.isEmpty()) {
             String extension = getFileExtensionFromUrl(fileUrl);
             String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
             fileName = "file_" + timeStamp + (extension.isEmpty() ? "" : "." + extension);
         }
 
-        // Определяем папку назначения в зависимости от типа файла
         String albumFolder = getAlbumFolderForFileType(fileType);
 
         showDownloadProgress(true, fileName);
 
-        // Создаем final копии для использования в потоке
         final String finalFileName = fileName;
         final String finalAlbumFolder = albumFolder;
         final String finalFileUrl = fileUrl;
@@ -1204,7 +1325,6 @@ public class ChatActivity extends AppCompatActivity {
 
                 int fileLength = connection.getContentLength();
 
-                // Создаем папку альбома
                 File albumDir = new File(Environment.getExternalStoragePublicDirectory(
                         Environment.DIRECTORY_PICTURES), "Telegram/" + finalAlbumFolder);
                 if (!albumDir.exists()) {
@@ -1213,7 +1333,6 @@ public class ChatActivity extends AppCompatActivity {
 
                 File outputFile = new File(albumDir, finalFileName);
 
-                // Проверяем, не существует ли уже файл
                 if (outputFile.exists()) {
                     runOnUiThread(() -> {
                         showDownloadProgress(false, null);
@@ -1248,7 +1367,6 @@ public class ChatActivity extends AppCompatActivity {
                 output.close();
                 input.close();
 
-                // Сканируем файл для добавления в галерею
                 scanFileToGallery(outputFile);
 
                 runOnUiThread(() -> {
@@ -1307,7 +1425,6 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // Методы для скачивания
     private void showDownloadProgress(boolean show, String fileName) {
         if (uploadProgressLayout != null) {
             if (show) {
@@ -1333,7 +1450,6 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // Просмотр изображения
     private void viewImage(String imageUrl) {
         Intent intent = new Intent(Intent.ACTION_VIEW);
         intent.setDataAndType(Uri.parse(imageUrl), "image/*");
@@ -1346,7 +1462,6 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // Воспроизведение видео
     private void playVideo(String videoUrl) {
         Intent intent = new Intent(Intent.ACTION_VIEW);
         intent.setDataAndType(Uri.parse(videoUrl), "video/*");
@@ -1359,7 +1474,6 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // Получить расширение файла из URL
     private String getFileExtensionFromUrl(String url) {
         if (url == null) return "";
         int lastDot = url.lastIndexOf('.');
@@ -1371,19 +1485,6 @@ public class ChatActivity extends AppCompatActivity {
         return "";
     }
 
-    // Показать уведомление о завершении скачивания
-    private void showDownloadCompleteNotification(File file) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Скачивание завершено");
-        builder.setMessage("Файл сохранен: " + file.getName());
-
-        builder.setPositiveButton("Открыть", (dialog, which) -> openDownloadedFile(file));
-        builder.setNegativeButton("OK", null);
-
-        builder.show();
-    }
-
-    // Открыть скачанный файл
     private void openDownloadedFile(File file) {
         Intent intent = new Intent(Intent.ACTION_VIEW);
 
@@ -1403,7 +1504,6 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // Определить MIME тип по имени файла
     private String getMimeType(String fileName) {
         if (fileName == null) return "*/*";
 

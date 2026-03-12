@@ -1,15 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-
-
     <!-- Базовые разрешения для сети -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" /> <!-- Разрешения для работы с хранилищем -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/> <!-- Для Android 10-12 (API 29-32) -->
-
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" /> <!-- Для Android 10-12 (API 29-32) -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" /> <!-- Для Android 9 и ниже (API 28-) -->
@@ -17,8 +14,6 @@
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" /> <!-- Разрешение для камеры -->
     <uses-permission android:name="android.permission.CAMERA" /> <!-- Фичи для камеры (не обязательные) -->
-
-
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
@@ -28,7 +23,6 @@
     <uses-feature
         android:name="android.hardware.camera.flash"
         android:required="false" />
-
 
     <application
         android:allowBackup="true"
@@ -41,12 +35,14 @@
         android:theme="@style/Theme.MyTelegram"
         tools:targetApi="31">
         <activity
+            android:name=".FullImageActivity"
+            android:exported="false" />
+        <activity
             android:name=".ImageViewActivity"
             android:exported="false" />
         <activity
             android:name=".UserProfileActivity"
             android:exported="false" />
-
         <activity
             android:name=".LoginActivity"
             android:exported="true"
