@@ -1089,6 +1089,7 @@ public class ChatActivity extends AppCompatActivity {
 
             public void bind(Message message) {
                 String imageUrl = message.getFileUrl();
+                String filename = message.getFileName();
                 messageTime.setText(formatTime(message.getTimestamp()));
 
                 if (imageUrl != null && !imageUrl.isEmpty()) {
@@ -1122,6 +1123,7 @@ public class ChatActivity extends AppCompatActivity {
                     imageMessage.setOnClickListener(v -> {
                         Intent intent = new Intent(context, FullImageActivity.class);
                         intent.putExtra("image_url", imageUrl);
+                        intent.putExtra("FileName",filename);
                         context.startActivity(intent);
                     });
                 }
@@ -1144,7 +1146,7 @@ public class ChatActivity extends AppCompatActivity {
                     int position = getAdapterPosition();
                     if (position != RecyclerView.NO_POSITION) {
                         Message message = messagesList.get(position);
-                        handleMessageClick(message);
+
                     }
                 });
             }
@@ -1191,8 +1193,6 @@ public class ChatActivity extends AppCompatActivity {
                             } else {
                                 Toast.makeText(itemView.getContext(), "Файл не найден", Toast.LENGTH_SHORT).show();
                             }
-                        } else {
-                            Toast.makeText(itemView.getContext(), "Текстовое сообщение", Toast.LENGTH_SHORT).show();
                         }
                     }
                 });
@@ -1213,6 +1213,8 @@ public class ChatActivity extends AppCompatActivity {
             }
         }
 
+
+        // ФУНКЦИЯ ДЛЯ ФОРМАТИРОВАНИЯ ДАТЫ
         private String formatTime(long timestamp) {
             try {
                 SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
@@ -1223,65 +1225,8 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // Обработка клика на сообщение
-    private void handleMessageClick(Message message) {
-        if (message.isImageMessage() || message.isVideoMessage() || message.isDocumentMessage()) {
-            showDownloadOptions(message);
-        } else {
-            Toast.makeText(this, "Текстовое сообщение", Toast.LENGTH_SHORT).show();
-        }
-    }
 
-    // Показать опции для скачивания файла
-    private void showDownloadOptions(Message message) {
-        String fileUrl = message.getFileUrl();
-        String fileName = message.getFileName();
-        String messageType = message.getMessageType();
 
-        if (fileUrl == null || fileUrl.isEmpty()) {
-            Toast.makeText(this, "Ошибка: файл не найден", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-
-        String title = "";
-        String[] options;
-
-        if (message.isImageMessage()) {
-            title = "Изображение";
-            options = new String[]{"📥 Скачать изображение", "👀 Просмотреть"};
-        } else if (message.isVideoMessage()) {
-            title = "Видео";
-            options = new String[]{"📥 Скачать видео", "▶️ Воспроизвести"};
-        } else {
-            title = "Документ";
-            options = new String[]{"📥 Скачать документ"};
-        }
-
-        builder.setTitle(title);
-        if (fileName != null) {
-            builder.setMessage(fileName);
-        }
-
-        builder.setItems(options, (dialog, which) -> {
-            switch (which) {
-                case 0:
-                    downloadFile(fileUrl, fileName, messageType);
-                    break;
-                case 1:
-                    if (message.isImageMessage()) {
-                        viewImage(fileUrl);
-                    } else if (message.isVideoMessage()) {
-                        playVideo(fileUrl);
-                    }
-                    break;
-            }
-        });
-
-        builder.setNegativeButton("Отмена", null);
-        builder.show();
-    }
 
     private String getAlbumFolderForFileType(String fileType) {
         switch (fileType) {
@@ -1450,29 +1395,9 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    private void viewImage(String imageUrl) {
-        Intent intent = new Intent(Intent.ACTION_VIEW);
-        intent.setDataAndType(Uri.parse(imageUrl), "image/*");
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
-        if (intent.resolveActivity(getPackageManager()) != null) {
-            startActivity(intent);
-        } else {
-            Toast.makeText(this, "Не найдено приложение для просмотра изображений", Toast.LENGTH_SHORT).show();
-        }
-    }
 
-    private void playVideo(String videoUrl) {
-        Intent intent = new Intent(Intent.ACTION_VIEW);
-        intent.setDataAndType(Uri.parse(videoUrl), "video/*");
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
-        if (intent.resolveActivity(getPackageManager()) != null) {
-            startActivity(intent);
-        } else {
-            Toast.makeText(this, "Не найдено приложение для воспроизведения видео", Toast.LENGTH_SHORT).show();
-        }
-    }
 
     private String getFileExtensionFromUrl(String url) {
         if (url == null) return "";

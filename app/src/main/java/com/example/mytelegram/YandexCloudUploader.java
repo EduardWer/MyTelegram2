@@ -138,6 +138,13 @@ public class YandexCloudUploader {
         }
     }
 
+
+
+
+
+
+
+
     // Класс для отслеживания прогресса загрузки
     private static class CountingRequestBody extends RequestBody {
         private final RequestBody delegate;
@@ -199,4 +206,14 @@ public class YandexCloudUploader {
             return response;
         }
     }
+
+
+
+
+
+    // ______________________________________________________________________________________________________________________________________________________________________
+
+
+
+
 }
