@@ -2,10 +2,14 @@ package com.example.mytelegram;
 
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.MediaStore;
 import android.text.TextUtils;
 import android.util.Log;
@@ -19,6 +23,7 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.VideoView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -55,6 +60,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ChatActivity extends AppCompatActivity {
     private static final String TAG = "ChatActivity";
@@ -107,6 +114,10 @@ public class ChatActivity extends AppCompatActivity {
     private boolean isUploadCancelled = false;
     private Uri currentFileUri;
     private String currentFileType;
+
+    // Executor для видео превью
+    private final ExecutorService executorService = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -695,6 +706,7 @@ public class ChatActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         markMessagesAsRead();
+        executorService.shutdown();
     }
 
     private void loadMessages() {
@@ -929,8 +941,92 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // Внутренний класс адаптера для сообщений с поддержкой фото
-    private class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+    // ================ МЕТОДЫ ДЛЯ ВИДЕО ПРЕДПРОСМОТРА ================
+
+    private void loadVideoThumbnail(String videoUrl, VideoThumbnailCallback callback) {
+        executorService.execute(() -> {
+            try {
+                MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+
+                // Для онлайн видео
+                if (videoUrl.startsWith("http")) {
+                    retriever.setDataSource(videoUrl, new HashMap<String, String>());
+                } else {
+                    retriever.setDataSource(videoUrl);
+                }
+
+                // Получаем кадр на 1 секунде
+                Bitmap bitmap = retriever.getFrameAtTime(1000000); // 1 секунда в микросекундах
+
+                if (bitmap != null) {
+                    mainHandler.post(() -> callback.onThumbnailLoaded(bitmap));
+                } else {
+                    mainHandler.post(callback::onError);
+                }
+
+                retriever.release();
+            } catch (Exception e) {
+                Log.e(TAG, "Ошибка загрузки превью видео: " + e.getMessage());
+                mainHandler.post(callback::onError);
+            }
+        });
+    }
+
+    private void getVideoDuration(String videoUrl, VideoDurationCallback callback) {
+        executorService.execute(() -> {
+            try {
+                MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+
+                if (videoUrl.startsWith("http")) {
+                    retriever.setDataSource(videoUrl, new HashMap<String, String>());
+                } else {
+                    retriever.setDataSource(videoUrl);
+                }
+
+                String durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                long duration = 0;
+
+                if (durationStr != null) {
+                    duration = Long.parseLong(durationStr) / 1000; // конвертируем в секунды
+                }
+
+                final long finalDuration = duration;
+                mainHandler.post(() -> callback.onDurationLoaded(finalDuration));
+
+                retriever.release();
+            } catch (Exception e) {
+                Log.e(TAG, "Ошибка получения длительности видео: " + e.getMessage());
+                mainHandler.post(() -> callback.onDurationLoaded(0));
+            }
+        });
+    }
+
+    private String formatDuration(long seconds) {
+        long minutes = seconds / 60;
+        long remainingSeconds = seconds % 60;
+        return String.format(Locale.getDefault(), "%d:%02d", minutes, remainingSeconds);
+    }
+
+    private void playVideo(String videoUrl, String videoTitle) {
+        Intent intent = new Intent(this, VideoPlayerActivity.class);
+        intent.putExtra("video_url", videoUrl);
+        intent.putExtra("video_title", videoTitle != null ? videoTitle : "Видео");
+        startActivity(intent);
+    }
+
+    // Интерфейсы для колбэков
+    interface VideoThumbnailCallback {
+        void onThumbnailLoaded(Bitmap bitmap);
+        void onError();
+    }
+
+    interface VideoDurationCallback {
+        void onDurationLoaded(long duration);
+    }
+
+    // ================ ВНУТРЕННИЙ КЛАСС АДАПТЕРА ================
+
+    public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         private static final int TYPE_SENT_TEXT = 1;
         private static final int TYPE_RECEIVED_TEXT = 2;
         private static final int TYPE_SENT_IMAGE = 3;
@@ -986,6 +1082,14 @@ public class ChatActivity extends AppCompatActivity {
                     View receivedImageView = inflater.inflate(R.layout.item_image_received, parent, false);
                     return new ReceivedImageViewHolder(receivedImageView);
 
+                case TYPE_SENT_VIDEO:
+                    View sentVideoView = inflater.inflate(R.layout.item_video_sent, parent, false);
+                    return new SentVideoViewHolder(sentVideoView);
+
+                case TYPE_RECEIVED_VIDEO:
+                    View receivedVideoView = inflater.inflate(R.layout.item_video_received, parent, false);
+                    return new ReceivedVideoViewHolder(receivedVideoView);
+
                 case TYPE_SENT_TEXT:
                     View sentTextView = inflater.inflate(R.layout.item_message_send, parent, false);
                     return new SentMessageViewHolder(sentTextView);
@@ -1008,6 +1112,10 @@ public class ChatActivity extends AppCompatActivity {
                 ((SentImageViewHolder) holder).bind(message);
             } else if (holder instanceof ReceivedImageViewHolder) {
                 ((ReceivedImageViewHolder) holder).bind(message);
+            } else if (holder instanceof SentVideoViewHolder) {
+                ((SentVideoViewHolder) holder).bind(message);
+            } else if (holder instanceof ReceivedVideoViewHolder) {
+                ((ReceivedVideoViewHolder) holder).bind(message);
             } else if (holder instanceof SentMessageViewHolder) {
                 ((SentMessageViewHolder) holder).bind(message);
             } else if (holder instanceof ReceivedMessageViewHolder) {
@@ -1123,8 +1231,130 @@ public class ChatActivity extends AppCompatActivity {
                     imageMessage.setOnClickListener(v -> {
                         Intent intent = new Intent(context, FullImageActivity.class);
                         intent.putExtra("image_url", imageUrl);
-                        intent.putExtra("FileName",filename);
+                        intent.putExtra("FileName", filename);
                         context.startActivity(intent);
+                    });
+                }
+            }
+        }
+
+        // ViewHolder для отправленных видео
+        class SentVideoViewHolder extends RecyclerView.ViewHolder {
+            private ImageView videoThumbnail;
+            private ImageView playButton;
+            private TextView videoDuration;
+            private TextView messageTime;
+            private ProgressBar videoProgress;
+
+            public SentVideoViewHolder(@NonNull View itemView) {
+                super(itemView);
+                videoThumbnail = itemView.findViewById(R.id.videoThumbnail);
+                playButton = itemView.findViewById(R.id.playButton);
+                videoDuration = itemView.findViewById(R.id.videoDuration);
+                messageTime = itemView.findViewById(R.id.messageTime);
+                videoProgress = itemView.findViewById(R.id.videoProgress);
+            }
+
+            public void bind(Message message) {
+                String videoUrl = message.getFileUrl();
+                String fileName = message.getFileName();
+                messageTime.setText(formatTime(message.getTimestamp()));
+
+                if (videoUrl != null && !videoUrl.isEmpty()) {
+                    videoProgress.setVisibility(View.VISIBLE);
+
+                    // Загружаем превью видео (первый кадр)
+                    loadVideoThumbnail(videoUrl, new VideoThumbnailCallback() {
+                        @Override
+                        public void onThumbnailLoaded(Bitmap bitmap) {
+                            videoProgress.setVisibility(View.GONE);
+                            videoThumbnail.setImageBitmap(bitmap);
+
+                            // Получаем длительность видео
+                            getVideoDuration(videoUrl, duration -> {
+                                if (duration > 0) {
+                                    videoDuration.setText(formatDuration(duration));
+                                    videoDuration.setVisibility(View.VISIBLE);
+                                }
+                            });
+                        }
+
+                        @Override
+                        public void onError() {
+                            videoProgress.setVisibility(View.GONE);
+                            videoThumbnail.setImageResource(R.drawable.ic_video_placeholder);
+                        }
+                    });
+
+                    // Кнопка воспроизведения
+                    playButton.setOnClickListener(v -> {
+                        playVideo(videoUrl, fileName);
+                    });
+
+                    // Клик по превью
+                    videoThumbnail.setOnClickListener(v -> {
+                        playVideo(videoUrl, fileName);
+                    });
+                }
+            }
+        }
+
+        // ViewHolder для полученных видео
+        class ReceivedVideoViewHolder extends RecyclerView.ViewHolder {
+            private ImageView videoThumbnail;
+            private ImageView playButton;
+            private TextView videoDuration;
+            private TextView messageTime;
+            private ProgressBar videoProgress;
+
+            public ReceivedVideoViewHolder(@NonNull View itemView) {
+                super(itemView);
+                videoThumbnail = itemView.findViewById(R.id.videoThumbnail);
+                playButton = itemView.findViewById(R.id.playButton);
+                videoDuration = itemView.findViewById(R.id.videoDuration);
+                messageTime = itemView.findViewById(R.id.messageTime);
+                videoProgress = itemView.findViewById(R.id.videoProgress);
+            }
+
+            public void bind(Message message) {
+                String videoUrl = message.getFileUrl();
+                String fileName = message.getFileName();
+                messageTime.setText(formatTime(message.getTimestamp()));
+
+                if (videoUrl != null && !videoUrl.isEmpty()) {
+                    videoProgress.setVisibility(View.VISIBLE);
+
+                    // Загружаем превью видео (первый кадр)
+                    loadVideoThumbnail(videoUrl, new VideoThumbnailCallback() {
+                        @Override
+                        public void onThumbnailLoaded(Bitmap bitmap) {
+                            videoProgress.setVisibility(View.GONE);
+                            videoThumbnail.setImageBitmap(bitmap);
+
+                            // Получаем длительность видео
+                            getVideoDuration(videoUrl, duration -> {
+                                if (duration > 0) {
+                                    videoDuration.setText(formatDuration(duration));
+                                    videoDuration.setVisibility(View.VISIBLE);
+                                }
+                            });
+                        }
+
+                        @Override
+                        public void onError() {
+                            videoProgress.setVisibility(View.GONE);
+                            videoThumbnail.setImageResource(R.drawable.ic_video_placeholder);
+                        }
+                    });
+
+                    // Кнопка воспроизведения
+                    playButton.setOnClickListener(v -> {
+                        playVideo(videoUrl, fileName);
+                    });
+
+                    // Клик по превью
+                    videoThumbnail.setOnClickListener(v -> {
+                        playVideo(videoUrl, fileName);
                     });
                 }
             }
@@ -1146,7 +1376,6 @@ public class ChatActivity extends AppCompatActivity {
                     int position = getAdapterPosition();
                     if (position != RecyclerView.NO_POSITION) {
                         Message message = messagesList.get(position);
-
                     }
                 });
             }
@@ -1213,8 +1442,7 @@ public class ChatActivity extends AppCompatActivity {
             }
         }
 
-
-        // ФУНКЦИЯ ДЛЯ ФОРМАТИРОВАНИЯ ДАТЫ
+        // Функция для форматирования даты
         private String formatTime(long timestamp) {
             try {
                 SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
@@ -1225,8 +1453,7 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-
-
+    // ================ МЕТОДЫ ДЛЯ СКАЧИВАНИЯ ФАЙЛОВ ================
 
     private String getAlbumFolderForFileType(String fileType) {
         switch (fileType) {
@@ -1241,7 +1468,6 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    // Скачать файл
     private void downloadFile(String fileUrl, String fileName, String fileType) {
         if (fileUrl == null || fileUrl.isEmpty()) {
             Toast.makeText(this, "Ошибка: неверная ссылка на файл", Toast.LENGTH_SHORT).show();
@@ -1261,6 +1487,7 @@ public class ChatActivity extends AppCompatActivity {
         final String finalFileName = fileName;
         final String finalAlbumFolder = albumFolder;
         final String finalFileUrl = fileUrl;
+        final boolean isVideo = "video".equals(fileType) || isVideoFile(getFileExtension(fileName));
 
         new Thread(() -> {
             try {
@@ -1282,6 +1509,11 @@ public class ChatActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         showDownloadProgress(false, null);
                         Toast.makeText(ChatActivity.this, "Файл уже существует: " + outputFile.getName(), Toast.LENGTH_LONG).show();
+
+                        // Если это видео, предлагаем открыть
+                        if (isVideo) {
+                            openDownloadedFile(outputFile);
+                        }
                     });
                     return;
                 }
@@ -1318,7 +1550,13 @@ public class ChatActivity extends AppCompatActivity {
                     showDownloadProgress(false, null);
                     String message = String.format("Файл сохранен в:\nTelegram/%s/\n%s",
                             finalAlbumFolder, outputFile.getName());
-                    showDownloadSuccessNotification(outputFile, finalAlbumFolder, message);
+
+                    if (isVideo) {
+                        // Для видео показываем диалог с возможностью открыть в плеере
+                        showVideoDownloadSuccessDialog(outputFile, finalAlbumFolder, message);
+                    } else {
+                        showDownloadSuccessNotification(outputFile, finalAlbumFolder, message);
+                    }
                 });
 
             } catch (Exception e) {
@@ -1330,12 +1568,26 @@ public class ChatActivity extends AppCompatActivity {
         }).start();
     }
 
+    // Добавьте диалог для видео
+    private void showVideoDownloadSuccessDialog(File file, String albumName, String message) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("✅ Видео загружено")
+                .setMessage(message)
+                .setPositiveButton("▶ Воспроизвести", (dialog, which) -> {
+                    playVideo(Uri.fromFile(file).toString(), file.getName());
+                })
+                .setNeutralButton("📁 Открыть папку", (dialog, which) -> {
+                    openAlbumFolder(albumName);
+                })
+                .setNegativeButton("OK", null)
+                .show();
+    }
+
     private void showDownloadSuccessNotification(File file, String albumName, String message) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("✅ Скачивание завершено")
                 .setMessage(message)
                 .setPositiveButton("Открыть", (dialog, which) -> openDownloadedFile(file))
-                .setPositiveButton("Открыть папку", (dialog, which) -> openAlbumFolder(albumName))
                 .setNegativeButton("OK", null)
                 .show();
     }
@@ -1395,10 +1647,6 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-
-
-
-
     private String getFileExtensionFromUrl(String url) {
         if (url == null) return "";
         int lastDot = url.lastIndexOf('.');
@@ -1411,54 +1659,126 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void openDownloadedFile(File file) {
-        Intent intent = new Intent(Intent.ACTION_VIEW);
+        String fileName = file.getName();
+        String extension = getFileExtension(fileName).toLowerCase();
 
-        String mimeType = getMimeType(file.getName());
+        // Проверяем, является ли файл видео
+        if (isVideoFile(extension)) {
+            // Для видео открываем VideoPlayerActivity
+            playVideo(Uri.fromFile(file).toString(), fileName);
+        } else {
+            // Для остальных файлов используем Intent.ACTION_VIEW
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            String mimeType = getMimeType(fileName);
 
-        Uri fileUri = FileProvider.getUriForFile(this,
-                getApplicationContext().getPackageName() + ".fileprovider",
-                file);
+            Uri fileUri = FileProvider.getUriForFile(this,
+                    getApplicationContext().getPackageName() + ".fileprovider",
+                    file);
 
-        intent.setDataAndType(fileUri, mimeType);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.setDataAndType(fileUri, mimeType);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
-        try {
-            startActivity(intent);
-        } catch (Exception e) {
-            Toast.makeText(this, "Не удалось открыть файл", Toast.LENGTH_SHORT).show();
+            try {
+                startActivity(intent);
+            } catch (Exception e) {
+                Toast.makeText(this, "Не удалось открыть файл", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    // Добавьте метод для проверки видеофайлов
+    private boolean isVideoFile(String extension) {
+        switch (extension) {
+            case "mp4":
+            case "avi":
+            case "mkv":
+            case "mov":
+            case "wmv":
+            case "flv":
+            case "webm":
+            case "3gp":
+            case "m4v":
+                return true;
+            default:
+                return false;
         }
     }
 
     private String getMimeType(String fileName) {
         if (fileName == null) return "*/*";
 
-        String extension = getFileExtension(fileName);
+        String extension = getFileExtension(fileName).toLowerCase();
 
-        switch (extension.toLowerCase()) {
+        switch (extension) {
+            // Изображения
             case "jpg":
             case "jpeg":
+                return "image/jpeg";
             case "png":
+                return "image/png";
             case "gif":
-                return "image/*";
+                return "image/gif";
+            case "bmp":
+                return "image/bmp";
+            case "webp":
+                return "image/webp";
+
+            // Видео
             case "mp4":
+                return "video/mp4";
             case "avi":
+                return "video/x-msvideo";
             case "mkv":
-                return "video/*";
+                return "video/x-matroska";
+            case "mov":
+                return "video/quicktime";
+            case "wmv":
+                return "video/x-ms-wmv";
+            case "flv":
+                return "video/x-flv";
+            case "webm":
+                return "video/webm";
+            case "3gp":
+                return "video/3gpp";
+            case "m4v":
+                return "video/x-m4v";
+
+            // Аудио
+            case "mp3":
+                return "audio/mpeg";
+            case "wav":
+                return "audio/wav";
+            case "ogg":
+                return "audio/ogg";
+            case "aac":
+                return "audio/aac";
+            case "m4a":
+                return "audio/mp4";
+
+            // Документы
             case "pdf":
                 return "application/pdf";
             case "doc":
-            case "docx":
                 return "application/msword";
+            case "docx":
+                return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
             case "xls":
-            case "xlsx":
                 return "application/vnd.ms-excel";
+            case "xlsx":
+                return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
             case "ppt":
-            case "pptx":
                 return "application/vnd.ms-powerpoint";
-            case "zip":
-                return "application/zip";
+            case "pptx":
+                return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
             case "txt":
                 return "text/plain";
+            case "rtf":
+                return "application/rtf";
+            case "zip":
+                return "application/zip";
+            case "rar":
+                return "application/x-rar-compressed";
+
             default:
                 return "*/*";
         }

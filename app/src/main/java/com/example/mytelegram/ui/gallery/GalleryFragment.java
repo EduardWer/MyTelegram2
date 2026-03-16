@@ -133,16 +133,16 @@ public class GalleryFragment extends Fragment {
         }
 
         File picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
-        File telegramPicturesDir = new File(picturesDir, "Telegram/Документы");
+        File telegramPicturesDir = new File(picturesDir, "Pride/documents");
 
         File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-        File telegramDownloadsDir = new File(downloadsDir, "Telegram/Документы");
+        File telegramDownloadsDir = new File(downloadsDir, "Pride/documents");
 
         File documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
-        File telegramDocumentsDir = new File(documentsDir, "Telegram/Документы");
+        File telegramDocumentsDir = new File(documentsDir, "Pride/documents");
 
         File moviesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES);
-        File telegramMoviesDir = new File(moviesDir, "Telegram/Документы");
+        File telegramMoviesDir = new File(moviesDir, "Pride/documents");
 
         if (telegramPicturesDir.exists()) {
             addFilesFromDirectory(telegramPicturesDir);

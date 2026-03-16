@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <!-- Верхняя панель с кнопками -->
+    <RelativeLayout
+        android:id="@+id/topPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="#CC000000"
+        android:padding="8dp">
+
+        <!-- Кнопка назад -->
+        <ImageButton
+            android:id="@+id/backButton"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_back"
+            android:tint="@android:color/white"
+            tools:ignore="UseAppTint" />
+
+        <!-- Заголовок видео -->
+        <TextView
+            android:id="@+id/titleText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_toEndOf="@id/backButton"
+            android:layout_toStartOf="@id/downloadbutton"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="8dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@android:color/white"
+            android:textSize="16sp" />
+
+        <!-- Кнопка скачивания -->
+        <Button
+            android:id="@+id/downloadbutton"
+            android:layout_width="80dp"
+            android:layout_height="40dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:backgroundTint="@color/white"
+            android:text="Скачать"
+            android:textAllCaps="false"
+            android:textColor="@android:color/black"
+            android:textSize="12sp" />
+
+    </RelativeLayout>
+
+    <!-- JZVideo плеер (центрированный, не на весь экран) -->
+
+    <!-- Нижняя панель с индикаторами -->
+    <cn.jzvd.JzvdStd
+        android:id="@+id/jzVideoPlayer"
+        android:layout_width="match_parent"
+        android:layout_height="616dp"
+        android:layout_gravity="center"
+        />
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#CC000000"
+        android:padding="8dp">
+
+        <!-- Индикатор скорости -->
+        <TextView
+            android:id="@+id/speedIndicator"
+            android:layout_width="88dp"
+            android:layout_height="30dp"
+            android:layout_alignParentStart="true"
+            android:background="#80000000"
+            android:gravity="center"
+            android:textColor="#FF4081"
+            android:textSize="10sp"
+            android:visibility="gone" />
+
+        <!-- Индикатор качества -->
+        <TextView
+            android:id="@+id/qualityIndicator"
+            android:layout_width="88dp"
+            android:layout_height="30dp"
+            android:layout_alignParentEnd="true"
+            android:background="#80000000"
+            android:gravity="center"
+            android:textColor="#4CAF50"
+            android:textSize="10sp"
+            android:visibility="gone" />
+
+    </RelativeLayout>
+
+</FrameLayout>
