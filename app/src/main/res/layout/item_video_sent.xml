@@ -16,8 +16,8 @@
         android:background="@drawable/bubble_sent">
 
         <FrameLayout
-            android:layout_width="200dp"
-            android:layout_height="150dp"
+            android:layout_width="250dp"
+            android:layout_height="300dp"
             android:layout_margin="4dp">
 
             <ImageView
@@ -25,8 +25,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:adjustViewBounds="true"
-                android:background="#1E000000"
-                android:scaleType="centerCrop" />
+                android:background="@drawable/rouded_buttons"
+                android:scaleType="centerCrop"
+                android:clipToOutline="true"
+                android:outlineProvider="background"
+                />
 
             <ProgressBar
                 android:id="@+id/videoProgress"
@@ -78,7 +81,7 @@
             android:layout_marginEnd="8dp"
             android:layout_marginBottom="4dp"
             android:textSize="10sp"
-            android:textColor="#888888" />
+            android:textColor="@color/black" />
 
     </LinearLayout>
 

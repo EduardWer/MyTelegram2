@@ -1,11 +1,22 @@
 package com.example.mytelegram;
 
+import android.app.ProgressDialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Outline;
+import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
+import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.media.MediaMetadataRetriever;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -16,6 +27,8 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
+import android.webkit.MimeTypeMap;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -23,7 +36,6 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.VideoView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -1014,6 +1026,26 @@ public class ChatActivity extends AppCompatActivity {
         startActivity(intent);
     }
 
+    // Метод для создания закругленного Bitmap
+    private Bitmap getRoundedCornerBitmap(Bitmap bitmap, int radius) {
+        if (bitmap == null) return null;
+
+        Bitmap output = Bitmap.createBitmap(bitmap.getWidth(), bitmap.getHeight(),
+                Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(output);
+
+        Paint paint = new Paint();
+        paint.setAntiAlias(true);
+
+        RectF rect = new RectF(0, 0, bitmap.getWidth(), bitmap.getHeight());
+        canvas.drawRoundRect(rect, radius, radius, paint);
+
+        paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_IN));
+        canvas.drawBitmap(bitmap, 0, 0, paint);
+
+        return output;
+    }
+
     // Интерфейсы для колбэков
     interface VideoThumbnailCallback {
         void onThumbnailLoaded(Bitmap bitmap);
@@ -1238,7 +1270,7 @@ public class ChatActivity extends AppCompatActivity {
             }
         }
 
-        // ViewHolder для отправленных видео
+        // ViewHolder для отправленных видео (С ИСПРАВЛЕННЫМ ЗАКРУГЛЕНИЕМ)
         class SentVideoViewHolder extends RecyclerView.ViewHolder {
             private ImageView videoThumbnail;
             private ImageView playButton;
@@ -1268,7 +1300,27 @@ public class ChatActivity extends AppCompatActivity {
                         @Override
                         public void onThumbnailLoaded(Bitmap bitmap) {
                             videoProgress.setVisibility(View.GONE);
-                            videoThumbnail.setImageBitmap(bitmap);
+
+                            // СОЗДАЕМ ЗАКРУГЛЕННЫЙ BITMAP (радиус 48 пикселей)
+                            int radius = 48;
+                            Bitmap roundedBitmap = getRoundedCornerBitmap(bitmap, radius);
+
+                            if (roundedBitmap != null) {
+                                videoThumbnail.setImageBitmap(roundedBitmap);
+                            } else {
+                                videoThumbnail.setImageBitmap(bitmap);
+                            }
+
+                            // Добавляем закругление через OutlineProvider для API 21+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                videoThumbnail.setClipToOutline(true);
+                                videoThumbnail.setOutlineProvider(new ViewOutlineProvider() {
+                                    @Override
+                                    public void getOutline(View view, Outline outline) {
+                                        outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
+                                    }
+                                });
+                            }
 
                             // Получаем длительность видео
                             getVideoDuration(videoUrl, duration -> {
@@ -1299,7 +1351,7 @@ public class ChatActivity extends AppCompatActivity {
             }
         }
 
-        // ViewHolder для полученных видео
+        // ViewHolder для полученных видео (С ИСПРАВЛЕННЫМ ЗАКРУГЛЕНИЕМ)
         class ReceivedVideoViewHolder extends RecyclerView.ViewHolder {
             private ImageView videoThumbnail;
             private ImageView playButton;
@@ -1329,7 +1381,27 @@ public class ChatActivity extends AppCompatActivity {
                         @Override
                         public void onThumbnailLoaded(Bitmap bitmap) {
                             videoProgress.setVisibility(View.GONE);
-                            videoThumbnail.setImageBitmap(bitmap);
+
+                            // СОЗДАЕМ ЗАКРУГЛЕННЫЙ BITMAP (радиус 48 пикселей)
+                            int radius = 48;
+                            Bitmap roundedBitmap = getRoundedCornerBitmap(bitmap, radius);
+
+                            if (roundedBitmap != null) {
+                                videoThumbnail.setImageBitmap(roundedBitmap);
+                            } else {
+                                videoThumbnail.setImageBitmap(bitmap);
+                            }
+
+                            // Добавляем закругление через OutlineProvider для API 21+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                videoThumbnail.setClipToOutline(true);
+                                videoThumbnail.setOutlineProvider(new ViewOutlineProvider() {
+                                    @Override
+                                    public void getOutline(View view, Outline outline) {
+                                        outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
+                                    }
+                                });
+                            }
 
                             // Получаем длительность видео
                             getVideoDuration(videoUrl, duration -> {
@@ -1371,27 +1443,59 @@ public class ChatActivity extends AppCompatActivity {
                 messageText = itemView.findViewById(R.id.messageText);
                 messageTime = itemView.findViewById(R.id.messageTime);
                 messageLayout = itemView.findViewById(R.id.messageLayout);
-
-                messageLayout.setOnClickListener(v -> {
-                    int position = getAdapterPosition();
-                    if (position != RecyclerView.NO_POSITION) {
-                        Message message = messagesList.get(position);
-                    }
-                });
             }
 
             public void bind(Message message) {
                 if (message.isTextMessage()) {
                     messageText.setText(message.getText());
+                    messageLayout.setOnClickListener(null);
                 } else if (message.isImageMessage()) {
                     messageText.setText("🖼️ Изображение");
+                    setupImageClick(message);
                 } else if (message.isVideoMessage()) {
                     messageText.setText("🎥 Видео");
+                    setupVideoClick(message);
                 } else if (message.isDocumentMessage()) {
                     String fileName = message.getFileName();
                     messageText.setText("📄 " + (fileName != null ? fileName : "Документ"));
+                    setupDocumentClick(message);
                 }
                 messageTime.setText(formatTime(message.getTimestamp()));
+            }
+
+            private void setupImageClick(Message message) {
+                messageLayout.setOnClickListener(v -> {
+                    String imageUrl = message.getFileUrl();
+                    if (imageUrl != null && !imageUrl.isEmpty()) {
+                        Intent intent = new Intent(context, FullImageActivity.class);
+                        intent.putExtra("image_url", imageUrl);
+                        context.startActivity(intent);
+                    }
+                });
+            }
+
+            private void setupVideoClick(Message message) {
+                messageLayout.setOnClickListener(v -> {
+                    String videoUrl = message.getFileUrl();
+                    String fileName = message.getFileName();
+                    if (videoUrl != null && !videoUrl.isEmpty()) {
+                        playVideo(videoUrl, fileName);
+                    } else {
+                        Toast.makeText(context, "Видео не найдено", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+
+            private void setupDocumentClick(Message message) {
+                messageLayout.setOnClickListener(v -> {
+                    String fileUrl = message.getFileUrl();
+                    String fileName = message.getFileName();
+                    if (fileUrl != null && !fileUrl.isEmpty()) {
+                        downloadDocument(fileUrl, fileName);
+                    } else {
+                        Toast.makeText(context, "Документ не найден", Toast.LENGTH_SHORT).show();
+                    }
+                });
             }
         }
 
@@ -1406,39 +1510,61 @@ public class ChatActivity extends AppCompatActivity {
                 messageText = itemView.findViewById(R.id.messageText);
                 messageTime = itemView.findViewById(R.id.messageTime);
                 messageLayout = itemView.findViewById(R.id.messageLayout);
-
-                messageLayout.setOnClickListener(v -> {
-                    int position = getBindingAdapterPosition();
-                    if (position != RecyclerView.NO_POSITION && position < messagesList.size()) {
-                        Message message = messagesList.get(position);
-
-                        if (message.isImageMessage() || message.isVideoMessage() || message.isDocumentMessage()) {
-                            String fileUrl = message.getFileUrl();
-                            String fileName = message.getFileName();
-                            String messageType = message.getMessageType();
-
-                            if (fileUrl != null && !fileUrl.isEmpty()) {
-                                downloadFile(fileUrl, fileName, messageType);
-                            } else {
-                                Toast.makeText(itemView.getContext(), "Файл не найден", Toast.LENGTH_SHORT).show();
-                            }
-                        }
-                    }
-                });
             }
 
             public void bind(Message message) {
                 if (message.isTextMessage()) {
                     messageText.setText(message.getText());
+                    messageLayout.setOnClickListener(null);
                 } else if (message.isImageMessage()) {
                     messageText.setText("🖼️ Изображение");
+                    setupImageClick(message);
                 } else if (message.isVideoMessage()) {
                     messageText.setText("🎥 Видео");
+                    setupVideoClick(message);
                 } else if (message.isDocumentMessage()) {
                     String fileName = message.getFileName();
                     messageText.setText("📄 " + (fileName != null ? fileName : "Документ"));
+                    setupDocumentClick(message);
                 }
                 messageTime.setText(formatTime(message.getTimestamp()));
+            }
+
+            private void setupImageClick(Message message) {
+                messageLayout.setOnClickListener(v -> {
+                    String imageUrl = message.getFileUrl();
+                    String filename = message.getFileName();
+                    if (imageUrl != null && !imageUrl.isEmpty()) {
+                        Intent intent = new Intent(context, FullImageActivity.class);
+                        intent.putExtra("image_url", imageUrl);
+                        intent.putExtra("FileName", filename);
+                        context.startActivity(intent);
+                    }
+                });
+            }
+
+            private void setupVideoClick(Message message) {
+                messageLayout.setOnClickListener(v -> {
+                    String videoUrl = message.getFileUrl();
+                    String fileName = message.getFileName();
+                    if (videoUrl != null && !videoUrl.isEmpty()) {
+                        playVideo(videoUrl, fileName);
+                    } else {
+                        Toast.makeText(context, "Видео не найдено", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+
+            private void setupDocumentClick(Message message) {
+                messageLayout.setOnClickListener(v -> {
+                    String fileUrl = message.getFileUrl();
+                    String fileName = message.getFileName();
+                    if (fileUrl != null && !fileUrl.isEmpty()) {
+                        downloadDocument(fileUrl, fileName);
+                    } else {
+                        Toast.makeText(context, "Документ не найден", Toast.LENGTH_SHORT).show();
+                    }
+                });
             }
         }
 
@@ -1454,6 +1580,183 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     // ================ МЕТОДЫ ДЛЯ СКАЧИВАНИЯ ФАЙЛОВ ================
+
+    /**
+     * Скачивает документ с использованием YandexCloudDownloader
+     */
+    private void downloadDocument(String fileUrl, String fileName) {
+        if (fileUrl == null || fileUrl.isEmpty()) {
+            Toast.makeText(this, "Ошибка: неверная ссылка на документ", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Определяем имя файла
+        String finalFileName = fileName;
+        if (finalFileName == null || finalFileName.isEmpty()) {
+            String extension = getFileExtensionFromUrl(fileUrl);
+            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+            finalFileName = "document_" + timeStamp + (extension.isEmpty() ? "" : "." + extension);
+        }
+
+        // Показываем прогресс скачивания
+        showDocumentDownloadProgress(true, finalFileName);
+
+        // Получаем ключ объекта из URL
+        String objectKey = extractObjectKeyFromUrl(fileUrl);
+
+        // Создаем загрузчик
+        YandexCloudDownloader downloader = new YandexCloudDownloader(this);
+
+        // Устанавливаем слушатель
+        downloader.setDownloadListener(new YandexCloudDownloader.DownloadListener() {
+            @Override
+            public void onProgress(int progress) {
+
+            }
+
+            @Override
+            public void onSuccess(File file) {
+                runOnUiThread(() -> {
+                    showDocumentDownloadProgress(false, null);
+                    Toast.makeText(ChatActivity.this,
+                            "✅ Документ сохранен: " + file.getName(),
+                            Toast.LENGTH_LONG).show();
+
+                    // Спрашиваем, открыть ли документ
+                    showOpenDocumentDialog(file);
+                });
+            }
+
+            @Override
+            public void onError(String error) {
+                runOnUiThread(() -> {
+                    showDocumentDownloadProgress(false, null);
+                    Toast.makeText(ChatActivity.this,
+                            "❌ Ошибка скачивания: " + error,
+                            Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+
+        // Запускаем скачивание в папку documents
+        downloader.downloadPublicDocument("server21", objectKey, finalFileName);
+    }
+
+    /**
+     * Извлекает ключ объекта из URL Яндекс.Облака
+     */
+    private String extractObjectKeyFromUrl(String url) {
+        try {
+            Uri uri = Uri.parse(url);
+            String path = uri.getPath(); // /server21/chat_documents/uuid.pdf
+            if (path != null && path.startsWith("/")) {
+                // Убираем первый слеш и имя бакета (server21/)
+                String withoutFirstSlash = path.substring(1); // server21/chat_documents/uuid.pdf
+                int firstSlashIndex = withoutFirstSlash.indexOf('/');
+                if (firstSlashIndex != -1) {
+                    return withoutFirstSlash.substring(firstSlashIndex + 1); // chat_documents/uuid.pdf
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Ошибка парсинга URL: " + e.getMessage());
+        }
+
+        // Если не удалось распарсить, возвращаем имя файла
+        return "documents/" + System.currentTimeMillis() + ".pdf";
+    }
+
+    /**
+     * Показывает прогресс скачивания документа
+     */
+    private void showDocumentDownloadProgress(boolean show, String fileName) {
+        if (uploadProgressLayout != null) {
+            if (show) {
+                uploadProgressLayout.setVisibility(View.VISIBLE);
+                uploadFileName.setText(fileName != null ? fileName : "Скачивание документа...");
+                uploadProgressText.setText("0%");
+                uploadProgressBar.setProgress(0);
+
+                // Меняем текст кнопки отмены
+                cancelUploadButton.setVisibility(View.VISIBLE);
+                cancelUploadButton.setOnClickListener(v -> cancelDocumentDownload());
+            } else {
+                uploadProgressLayout.setVisibility(View.GONE);
+            }
+        }
+    }
+
+    /**
+     * Обновляет прогресс скачивания документа
+     */
+    private void updateDocumentDownloadProgress(int progress, String fileName) {
+        if (uploadProgressBar != null) {
+            uploadProgressBar.setProgress(progress);
+        }
+        if (uploadProgressText != null) {
+            uploadProgressText.setText(progress + "%");
+        }
+        if (uploadFileName != null && fileName != null) {
+            uploadFileName.setText(fileName);
+        }
+    }
+
+    /**
+     * Отменяет скачивание документа
+     */
+    private void cancelDocumentDownload() {
+        Toast.makeText(this, "Отмена скачивания...", Toast.LENGTH_SHORT).show();
+        showDocumentDownloadProgress(false, null);
+    }
+
+    /**
+     * Показывает диалог с предложением открыть скачанный документ
+     */
+    private void showOpenDocumentDialog(File file) {
+        String fileType = getFileExtension(file.getName()).toUpperCase();
+        String fileName = file.getName();
+
+        new AlertDialog.Builder(this)
+                .setTitle("📄 Документ скачан")
+                .setMessage("Файл: " + fileName + "\n\nХотите открыть?")
+                .setPositiveButton("Открыть", (dialog, which) -> {
+                    openDownloadedFile(file);
+                })
+                .setNeutralButton("📁 Показать в папке", (dialog, which) -> {
+                    showFileInFolder(file);
+                })
+                .setNegativeButton("Закрыть", null)
+                .show();
+    }
+
+    /**
+     * Показывает файл в папке (открывает файловый менеджер)
+     */
+    private void showFileInFolder(File file) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            Uri uri = FileProvider.getUriForFile(this,
+                    getApplicationContext().getPackageName() + ".fileprovider",
+                    file);
+
+            // Для Android 11+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                intent.setDataAndType(uri, "*/*");
+            } else {
+                intent.setDataAndType(uri, "resource/folder");
+            }
+
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            if (intent.resolveActivity(getPackageManager()) != null) {
+                startActivity(intent);
+            } else {
+                Toast.makeText(this, "Не найдено приложение для просмотра файлов", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Ошибка открытия папки: " + e.getMessage());
+            Toast.makeText(this, "Не удалось открыть папку", Toast.LENGTH_SHORT).show();
+        }
+    }
 
     private String getAlbumFolderForFileType(String fileType) {
         switch (fileType) {
@@ -1595,7 +1898,7 @@ public class ChatActivity extends AppCompatActivity {
     private void openAlbumFolder(String albumName) {
         try {
             File albumDir = new File(Environment.getExternalStoragePublicDirectory(
-                    Environment.DIRECTORY_PICTURES), "MyTelegram/" + albumName);
+                    Environment.DIRECTORY_PICTURES), "Telegram/" + albumName);
 
             Intent intent = new Intent(Intent.ACTION_VIEW);
             Uri uri = Uri.parse(albumDir.getAbsolutePath());

@@ -12,33 +12,33 @@
         android:id="@+id/topBar"
         android:layout_width="match_parent"
         android:layout_height="56dp"
+        android:background="@color/white"
+        android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:background="#FF6200EE"
         android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:gravity="center_vertical">
+        android:paddingEnd="16dp">
 
         <!-- Кнопка назад -->
         <ImageButton
             android:id="@+id/backButton"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:src="@drawable/ic_arrow_back"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:scaleType="center"
             android:contentDescription="Назад"
-            app:tint="@color/white" />
+            android:scaleType="center"
+            android:src="@drawable/ic_arrow_back"
+            app:tint="@color/black" />
 
         <!-- Аватар пользователя -->
         <ImageView
             android:id="@+id/userAvatar"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:src="@drawable/ic_person"
-            android:scaleType="centerCrop"
-            android:background="@drawable/circle_background"
             android:layout_marginStart="12dp"
-            android:contentDescription="Аватар пользователя" />
+            android:background="@drawable/circle_background"
+            android:contentDescription="Аватар пользователя"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_person" />
 
         <!-- Информация о пользователе -->
         <LinearLayout
@@ -54,7 +54,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Имя пользователя"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/black"
                 android:textSize="16sp"
                 android:textStyle="bold" />
 
@@ -63,7 +63,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="был(а) недавно"
-                android:textColor="#E0E0E0"
+                android:textColor="@color/black"
                 android:textSize="12sp" />
 
         </LinearLayout>
@@ -75,17 +75,17 @@
         android:id="@+id/uploadProgressLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_below="@+id/topBar"
+        android:background="#E3F2FD"
         android:orientation="horizontal"
         android:padding="12dp"
-        android:background="#E3F2FD"
-        android:visibility="gone"
-        android:layout_below="@+id/topBar">
+        android:visibility="gone">
 
         <ImageView
             android:layout_width="24dp"
             android:layout_height="24dp"
-            android:src="@drawable/ic_file_upload"
             android:layout_marginEnd="8dp"
+            android:src="@drawable/ic_file_upload"
             app:tint="#4285F4" />
 
         <LinearLayout
@@ -98,11 +98,11 @@
                 android:id="@+id/uploadFileName"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Загрузка файла..."
-                android:textSize="14sp"
-                android:textColor="#333333"
+                android:ellipsize="end"
                 android:maxLines="1"
-                android:ellipsize="end" />
+                android:text="Загрузка файла..."
+                android:textColor="#333333"
+                android:textSize="14sp" />
 
             <ProgressBar
                 android:id="@+id/uploadProgressBar"
@@ -115,10 +115,10 @@
                 android:id="@+id/uploadProgressText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
                 android:text="0%"
-                android:textSize="12sp"
                 android:textColor="#666666"
-                android:layout_marginTop="2dp" />
+                android:textSize="12sp" />
 
         </LinearLayout>
 
@@ -126,9 +126,9 @@
             android:id="@+id/cancelUploadButton"
             android:layout_width="24dp"
             android:layout_height="24dp"
-            android:src="@drawable/ic_close"
-            android:background="?attr/selectableItemBackgroundBorderless"
             android:layout_marginStart="8dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_close"
             app:tint="#666666" />
 
     </LinearLayout>
@@ -138,11 +138,11 @@
         android:id="@+id/recyclerViewMessages"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:padding="8dp"
-        android:background="@color/white"
-        android:scrollbars="vertical"
+        android:layout_above="@+id/inputLayout"
         android:layout_below="@+id/uploadProgressLayout"
-        android:layout_above="@+id/inputLayout"/>
+        android:background="@color/white"
+        android:padding="8dp"
+        android:scrollbars="vertical" />
 
     <ProgressBar
         android:id="@+id/progressBar"
@@ -156,21 +156,21 @@
         android:id="@+id/inputLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="12dp"
+        android:layout_alignParentBottom="true"
         android:background="#D7D7D7"
-        android:layout_alignParentBottom="true">
+        android:orientation="horizontal"
+        android:padding="12dp">
 
         <!-- Кнопка выбора файлов -->
         <ImageButton
             android:id="@+id/photoButton"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:src="@drawable/ic_attach_file"
+            android:layout_marginEnd="8dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:scaleType="center"
             android:contentDescription="Прикрепить файл"
-            android:layout_marginEnd="8dp"/>
+            android:scaleType="center"
+            android:src="@drawable/ic_attach_file" />
 
         <EditText
             android:id="@+id/messageEditText"
@@ -191,10 +191,9 @@
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:layout_marginStart="8dp"
-            android:background="#FF6200EE"
-            android:src="@drawable/ic_send"
+            android:background="@drawable/rouded_buttons"
             android:scaleType="center"
-            android:contentDescription="Отправить" />
+            android:src="@drawable/ic_send" />
     </LinearLayout>
 
 </RelativeLayout>
