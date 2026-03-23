@@ -1,41 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="wrap_content"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_gravity="start"
-    android:orientation="vertical"
-    android:padding="4dp">
+    android:gravity="start"
+    android:padding="8dp">
 
-    <FrameLayout
-        android:layout_width="250dp"
-        android:layout_height="350dp"
-        android:background="@drawable/bg_message_sent">
-
-        <ImageView
-            android:id="@+id/imageMessage"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="@drawable/rouded_buttons"
-            android:scaleType="centerCrop" />
-
-        <ProgressBar
-            android:id="@+id/imageProgress"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_gravity="center"
-            android:visibility="gone" />
-
-
-    </FrameLayout>
-    <TextView
-        android:id="@+id/messageTime"
-        android:layout_width="35dp"
+    <LinearLayout
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="4dp"
-        android:background="#88000000"
-        android:padding="4dp"
-        android:textColor="@android:color/white"
-        android:textSize="12sp" />
+        android:orientation="vertical"
+        android:background="@drawable/message_background_received"
+        android:padding="8dp">
 
+        <FrameLayout
+            android:layout_width="250dp"
+            android:layout_height="350dp">
+
+            <ImageView
+                android:id="@+id/imageMessage"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:clipToOutline="true" />
+
+            <ProgressBar
+                android:id="@+id/imageProgress"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="center"
+                android:visibility="gone" />
+
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/messageTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginTop="4dp"
+            android:textSize="10sp"
+            android:textColor="#666666" />
+
+    </LinearLayout>
 </LinearLayout>

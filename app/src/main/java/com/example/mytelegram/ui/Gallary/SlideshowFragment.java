@@ -41,13 +41,8 @@ public class SlideshowFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-
-        // Настройка RecyclerView
         setupRecyclerView();
-
-        // Проверяем разрешения при создании фрагмента
         checkPermissions();
-
         setupRefreshButton();
     }
 
@@ -62,7 +57,6 @@ public class SlideshowFragment extends Fragment {
         binding.titleText.setOnClickListener(v -> checkPermissions());
     }
 
-    // Проверка и запрос разрешений
     private void checkPermissions() {
         if (hasStoragePermission()) {
             loadDownloadedFiles();
@@ -71,7 +65,7 @@ public class SlideshowFragment extends Fragment {
         }
     }
 
-    // Проверка наличия разрешений
+
     private boolean hasStoragePermission() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             return ContextCompat.checkSelfPermission(requireContext(),
