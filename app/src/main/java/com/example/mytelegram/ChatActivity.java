@@ -88,6 +88,13 @@ public class ChatActivity extends AppCompatActivity {
     private static final int REQUEST_DOCUMENT_PICK = 1004;
 
     // UI элементы
+    private LinearLayout editMessageLayout;
+    private TextView editMessageLabel;
+    private ImageButton cancelEditButton;
+    private String editingMessageId = null;
+    private Message editingMessage = null;
+
+
     private RecyclerView messagesRecyclerView;
     private MessageAdapter messagesAdapter;
     private EditText messageEditText;
@@ -204,6 +211,11 @@ public class ChatActivity extends AppCompatActivity {
         uploadFileName = findViewById(R.id.uploadFileName);
         cancelUploadButton = findViewById(R.id.cancelUploadButton);
 
+        editMessageLayout = findViewById(R.id.editMessageLayout);
+        editMessageLabel = findViewById(R.id.editMessageLabel);
+        cancelEditButton = findViewById(R.id.cancelEditButton);
+
+
         messagesList = new ArrayList<>();
         messagePositions = new HashMap<>();
 
@@ -213,6 +225,87 @@ public class ChatActivity extends AppCompatActivity {
             userName.setText("Пользователь");
         }
     }
+
+
+// Длок для эксперементов
+    private void updateEditedMessage() {
+    if (editingMessageId == null || editingMessage == null) {
+        return;
+    }
+
+    String newText = messageEditText.getText().toString().trim();
+
+    if (TextUtils.isEmpty(newText)) {
+        Toast.makeText(ChatActivity.this, "Сообщение не может быть пустым", Toast.LENGTH_SHORT).show();
+        return;
+    }
+
+    if (newText.equals(editingMessage.getText())) {
+        // Текст не изменился - просто выходим из режима редактирования
+        cancelEditing();
+        return;
+    }
+
+    // Показываем прогресс
+    showLoading(true);
+
+    Map<String, Object> updates = new HashMap<>();
+    updates.put("text", newText);
+    updates.put("edited", true);
+    updates.put("editedAt", ServerValue.TIMESTAMP);
+
+    chatRef.child(editingMessageId).updateChildren(updates)
+            .addOnSuccessListener(aVoid -> {
+                runOnUiThread(() -> {
+                    showLoading(false);
+                    Toast.makeText(ChatActivity.this, "Сообщение изменено", Toast.LENGTH_SHORT).show();
+                    cancelEditing();
+                });
+            })
+            .addOnFailureListener(e -> {
+                runOnUiThread(() -> {
+                    showLoading(false);
+                    Log.e(TAG, "Ошибка изменения сообщения: " + e.getMessage());
+                    Toast.makeText(ChatActivity.this, "Ошибка изменения сообщения", Toast.LENGTH_SHORT).show();
+                });
+            });
+}
+
+    private void cancelEditing() {
+        editingMessageId = null;
+        editingMessage = null;
+
+        // Очищаем поле ввода
+        messageEditText.setText("");
+
+        // Скрываем панель редактирования
+        if (editMessageLayout != null) {
+            editMessageLayout.setVisibility(View.GONE);
+        }
+
+        // Возвращаем обычную иконку отправки
+        if (sendButton != null) {
+            sendButton.setImageResource(R.drawable.ic_send);
+        }
+
+        // Убираем фокус с поля ввода
+        messageEditText.clearFocus();
+    }
+
+    private void scrollToMessage(Message message) {
+        Integer position = messagePositions.get(message.getId());
+        if (position != null && position >= 0) {
+            messagesRecyclerView.scrollToPosition(position);
+        }
+    }
+
+
+
+
+
+// ____________________________________________________________________________________________________________________________________________________________________
+
+
 
 
 
@@ -226,9 +319,20 @@ public class ChatActivity extends AppCompatActivity {
         userAvatar.setOnClickListener(v -> openUserProfile());
         userName.setOnClickListener(v -> openUserProfile());
 
-        sendButton.setOnClickListener(v -> sendTextMessage());
+        sendButton.setOnClickListener(v -> {
+            if (editingMessageId != null && !editingMessageId.isEmpty()) {
+                updateEditedMessage();
+            } else {
+                sendTextMessage();
+            }
+        });
+
         photoButton.setOnClickListener(v -> showAttachmentDialog());
         cancelUploadButton.setOnClickListener(v -> cancelUpload());
+
+        if (cancelEditButton != null) {
+            cancelEditButton.setOnClickListener(v -> cancelEditing());
+        }
 
         messageEditText.setOnClickListener(v -> scrollToBottom());
     }
@@ -259,49 +363,46 @@ public class ChatActivity extends AppCompatActivity {
 
     // Диалог редактирования сообщения
     private void showEditMessageDialog(Message message) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Изменить сообщение");
+        // Вместо диалога используем режим редактирования в поле ввода
+        editingMessageId = message.getId();
+        editingMessage = message;
 
-        final EditText input = new EditText(this);
-        input.setText(message.getText());
-        input.setSelection(input.getText().length());
+        // Устанавливаем текст в поле ввода
+        messageEditText.setText(message.getText());
+        messageEditText.setSelection(message.getText().length());
 
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(48, 16, 48, 16);
-        input.setLayoutParams(lp);
+        // Показываем панель редактирования
+        editMessageLayout.setVisibility(View.VISIBLE);
+        editMessageLabel.setText("Редактирование сообщения");
 
-        builder.setView(input);
+        // Меняем иконку кнопки отправки (опционально)
+        sendButton.setImageResource(R.drawable.ic_check);
 
-        builder.setPositiveButton("Сохранить", (dialog, which) -> {
-            String newText = input.getText().toString().trim();
-            if (!TextUtils.isEmpty(newText) && !newText.equals(message.getText())) {
-                updateMessage(message, newText);
-            }
-        });
-        builder.setNegativeButton("Отмена", null);
-        builder.show();
+        // Фокусируемся на поле ввода
+        messageEditText.requestFocus();
+
+        // Прокручиваем к сообщению, которое редактируем
+        scrollToMessage(message);
     }
 
     // Обновление сообщения
-    private void updateMessage(Message message, String newText) {
-        String messageId = message.getId();
-
-        Map<String, Object> updates = new HashMap<>();
-        updates.put("text", newText);
-        updates.put("edited", true);
-        updates.put("editedAt", System.currentTimeMillis());
-
-        chatRef.child(messageId).updateChildren(updates)
-                .addOnSuccessListener(aVoid -> {
-                    Toast.makeText(this, "Сообщение изменено", Toast.LENGTH_SHORT).show();
-                })
-                .addOnFailureListener(e -> {
-                    Log.e(TAG, "Ошибка изменения сообщения: " + e.getMessage());
-                    Toast.makeText(this, "Ошибка изменения сообщения", Toast.LENGTH_SHORT).show();
-                });
-    }
+//    private void updateMessage(Message message, String newText) {
+//        String messageId = message.getId();
+//
+//        Map<String, Object> updates = new HashMap<>();
+//        updates.put("text", newText);
+//        updates.put("edited", true);
+//        updates.put("editedAt", System.currentTimeMillis());
+//
+//        chatRef.child(messageId).updateChildren(updates)
+//                .addOnSuccessListener(aVoid -> {
+//                    Toast.makeText(this, "Сообщение изменено", Toast.LENGTH_SHORT).show();
+//                })
+//                .addOnFailureListener(e -> {
+//                    Log.e(TAG, "Ошибка изменения сообщения: " + e.getMessage());
+//                    Toast.makeText(this, "Ошибка изменения сообщения", Toast.LENGTH_SHORT).show();
+//                });
+//    }
 
     private void showAttachmentDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
@@ -869,8 +970,6 @@ public class ChatActivity extends AppCompatActivity {
             return;
         }
 
-        long timestamp = System.currentTimeMillis();
-
         Map<String, Object> messageMap = new HashMap<>();
         messageMap.put("id", messageId);
         messageMap.put("text", text);
@@ -883,12 +982,13 @@ public class ChatActivity extends AppCompatActivity {
         messageMap.put("readBy", new HashMap<String, Boolean>());
         messageMap.put("edited", false);
 
+        long tempTimestamp = System.currentTimeMillis();
         Message message = new Message(
                 messageId,
                 text,
                 currentUserId,
                 recipientId,
-                timestamp,
+                tempTimestamp,
                 chatId,
                 "text"
         );
@@ -898,7 +998,7 @@ public class ChatActivity extends AppCompatActivity {
         chatRef.child(messageId).setValue(messageMap)
                 .addOnSuccessListener(aVoid -> {
                     messageEditText.setText("");
-                    updateLastMessageInfo(text,  "text");
+                    updateLastMessageInfo(text, "text");
                 })
                 .addOnFailureListener(e -> {
                     Log.e(TAG, "Ошибка отправки сообщения: " + e.getMessage());

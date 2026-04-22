@@ -20,7 +20,6 @@
         android:paddingStart="16dp"
         android:paddingEnd="16dp">
 
-        <!-- Кнопка назад -->
         <ImageButton
             android:id="@+id/backButton"
             android:layout_width="40dp"
@@ -31,7 +30,6 @@
             android:src="@drawable/ic_arrow_back"
             app:tint="@color/black" />
 
-        <!-- Аватар пользователя -->
         <ImageView
             android:id="@+id/userAvatar"
             android:layout_width="40dp"
@@ -42,7 +40,6 @@
             android:scaleType="centerCrop"
             android:src="@drawable/ic_person" />
 
-        <!-- Информация о пользователе -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -134,7 +131,46 @@
 
     </LinearLayout>
 
-    <!-- RecyclerView для сообщений (занимает всё свободное место) -->
+    <!-- Панель редактирования сообщения -->
+    <LinearLayout
+        android:id="@+id/editMessageLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#FFF3E0"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center_vertical"
+            android:layout_marginEnd="8dp"
+            android:src="@drawable/ic_edit"
+            app:tint="#FF9800" />
+
+        <TextView
+            android:id="@+id/editMessageLabel"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_gravity="center_vertical"
+            android:text="Редактирование сообщения"
+            android:textColor="#E65100"
+            android:textSize="14sp" />
+
+        <ImageButton
+            android:id="@+id/cancelEditButton"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_gravity="center_vertical"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_close"
+            app:tint="#FF9800" />
+
+    </LinearLayout>
+
+    <!-- RecyclerView для сообщений -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerViewMessages"
         android:layout_width="match_parent"
@@ -151,7 +187,7 @@
         android:layout_gravity="center"
         android:visibility="gone" />
 
-    <!-- Панель ввода сообщения (всегда привязана к низу) -->
+    <!-- Панель ввода сообщения -->
     <LinearLayout
         android:id="@+id/inputLayout"
         android:layout_width="match_parent"
@@ -160,7 +196,6 @@
         android:orientation="horizontal"
         android:padding="12dp">
 
-        <!-- Кнопка выбора файлов -->
         <ImageButton
             android:id="@+id/photoButton"
             android:layout_width="48dp"
