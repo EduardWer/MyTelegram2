@@ -21,6 +21,28 @@ public class Message implements Comparable<Message> {
     private boolean isRead = false;
     private Map<String, Boolean> readBy = new HashMap<>();
 
+
+    private boolean edited;
+    private long editedAt;
+
+
+
+    public boolean isEdited() {
+        return edited;
+    }
+
+    public void setEdited(boolean edited) {
+        this.edited = edited;
+    }
+
+    public long getEditedAt() {
+        return editedAt;
+    }
+
+    public void setEditedAt(long editedAt) {
+        this.editedAt = editedAt;
+    }
+
     // Конструкторы
     public Message() {}
 
@@ -95,7 +117,7 @@ public class Message implements Comparable<Message> {
     }
 
     public boolean isReadByUser(String userId) {
-        return readBy != null && readBy.containsKey(userId) && readBy.get(userId);
+        return readBy != null && readBy.containsKey(userId) && Boolean.TRUE.equals(readBy.get(userId));
     }
 
     public void markAsRead(String userId) {
@@ -109,7 +131,7 @@ public class Message implements Comparable<Message> {
     }
 
     private void updateReadStatus() {
-        if (readBy != null && readBy.size() > 0) {
+        if (readBy != null && !readBy.isEmpty()) {
             // Логика для определения, прочитано ли сообщение всеми участниками
             // В простом случае считаем, что если прочитал хотя бы один кроме отправителя - isRead = true
             for (Map.Entry<String, Boolean> entry : readBy.entrySet()) {

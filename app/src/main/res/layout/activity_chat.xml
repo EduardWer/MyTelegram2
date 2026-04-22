@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:animateLayoutChanges="true"
     android:background="#FFFFFF"
+    android:orientation="vertical"
     tools:context=".ChatActivity">
 
     <!-- Верхняя панель с информацией о чате -->
@@ -75,7 +77,6 @@
         android:id="@+id/uploadProgressLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_below="@+id/topBar"
         android:background="#E3F2FD"
         android:orientation="horizontal"
         android:padding="12dp"
@@ -133,13 +134,12 @@
 
     </LinearLayout>
 
-    <!-- RecyclerView для сообщений -->
+    <!-- RecyclerView для сообщений (занимает всё свободное место) -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerViewMessages"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_above="@+id/inputLayout"
-        android:layout_below="@+id/uploadProgressLayout"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:background="@color/white"
         android:padding="8dp"
         android:scrollbars="vertical" />
@@ -148,15 +148,14 @@
         android:id="@+id/progressBar"
         android:layout_width="175dp"
         android:layout_height="164dp"
-        android:layout_centerInParent="true"
+        android:layout_gravity="center"
         android:visibility="gone" />
 
-    <!-- Панель ввода сообщения -->
+    <!-- Панель ввода сообщения (всегда привязана к низу) -->
     <LinearLayout
         android:id="@+id/inputLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
         android:background="#D7D7D7"
         android:orientation="horizontal"
         android:padding="12dp">
@@ -175,12 +174,13 @@
         <EditText
             android:id="@+id/messageEditText"
             android:layout_width="0dp"
-            android:layout_height="50dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
             android:background="@drawable/edit_text_background"
             android:hint="Введите сообщение"
             android:inputType="textMultiLine"
             android:maxLines="3"
+            android:minHeight="50dp"
             android:paddingStart="16dp"
             android:paddingEnd="16dp"
             android:textColor="#000000"
@@ -196,4 +196,4 @@
             android:src="@drawable/ic_send" />
     </LinearLayout>
 
-</RelativeLayout>
+</LinearLayout>

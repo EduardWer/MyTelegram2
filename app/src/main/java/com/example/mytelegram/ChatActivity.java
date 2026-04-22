@@ -24,6 +24,7 @@ import android.os.Looper;
 import android.provider.MediaStore;
 import android.text.TextUtils;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -41,6 +42,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.PopupMenu;
 import androidx.core.content.FileProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -54,6 +56,7 @@ import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ServerValue;
 import com.google.firebase.database.ValueEventListener;
 
 import java.io.File;
@@ -151,7 +154,6 @@ public class ChatActivity extends AppCompatActivity {
         recipientId = intent.getStringExtra("recipientId");
         recipientName = intent.getStringExtra("recipientName");
 
-
         if (chatId == null || recipientId == null) {
             Toast.makeText(this, "Ошибка: не переданы данные чата", Toast.LENGTH_SHORT).show();
             finish();
@@ -212,23 +214,7 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    private void setupRecyclerView() {
-        messagesAdapter = new MessageAdapter(messagesList, currentUserId);
-        LinearLayoutManager layoutManager = new LinearLayoutManager(this);
-        layoutManager.setStackFromEnd(true);
-        messagesRecyclerView.setLayoutManager(layoutManager);
-        messagesRecyclerView.setAdapter(messagesAdapter);
 
-        messagesAdapter.registerAdapterDataObserver(new RecyclerView.AdapterDataObserver() {
-            @Override
-            public void onItemRangeInserted(int positionStart, int itemCount) {
-                super.onItemRangeInserted(positionStart, itemCount);
-                if (positionStart == messagesList.size() - 1) {
-                    scrollToBottom();
-                }
-            }
-        });
-    }
 
     private void setupClickListeners() {
         backButton.setOnClickListener(v -> navigateToHomeFragment());
@@ -245,6 +231,76 @@ public class ChatActivity extends AppCompatActivity {
         cancelUploadButton.setOnClickListener(v -> cancelUpload());
 
         messageEditText.setOnClickListener(v -> scrollToBottom());
+    }
+
+    // Диалог удаления сообщения
+    private void showDeleteMessageDialog(Message message) {
+        new AlertDialog.Builder(this)
+                .setTitle("Удалить сообщение")
+                .setMessage("Вы уверены, что хотите удалить это сообщение?")
+                .setPositiveButton("Удалить", (dialog, which) -> deleteMessage(message))
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
+    // Удаление сообщения
+    private void deleteMessage(Message message) {
+        String messageId = message.getId();
+
+        chatRef.child(messageId).removeValue()
+                .addOnSuccessListener(aVoid -> {
+                    Toast.makeText(this, "Сообщение удалено", Toast.LENGTH_SHORT).show();
+                })
+                .addOnFailureListener(e -> {
+                    Log.e(TAG, "Ошибка удаления сообщения: " + e.getMessage());
+                    Toast.makeText(this, "Ошибка удаления сообщения", Toast.LENGTH_SHORT).show();
+                });
+    }
+
+    // Диалог редактирования сообщения
+    private void showEditMessageDialog(Message message) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Изменить сообщение");
+
+        final EditText input = new EditText(this);
+        input.setText(message.getText());
+        input.setSelection(input.getText().length());
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(48, 16, 48, 16);
+        input.setLayoutParams(lp);
+
+        builder.setView(input);
+
+        builder.setPositiveButton("Сохранить", (dialog, which) -> {
+            String newText = input.getText().toString().trim();
+            if (!TextUtils.isEmpty(newText) && !newText.equals(message.getText())) {
+                updateMessage(message, newText);
+            }
+        });
+        builder.setNegativeButton("Отмена", null);
+        builder.show();
+    }
+
+    // Обновление сообщения
+    private void updateMessage(Message message, String newText) {
+        String messageId = message.getId();
+
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("text", newText);
+        updates.put("edited", true);
+        updates.put("editedAt", System.currentTimeMillis());
+
+        chatRef.child(messageId).updateChildren(updates)
+                .addOnSuccessListener(aVoid -> {
+                    Toast.makeText(this, "Сообщение изменено", Toast.LENGTH_SHORT).show();
+                })
+                .addOnFailureListener(e -> {
+                    Log.e(TAG, "Ошибка изменения сообщения: " + e.getMessage());
+                    Toast.makeText(this, "Ошибка изменения сообщения", Toast.LENGTH_SHORT).show();
+                });
     }
 
     private void showAttachmentDialog() {
@@ -578,15 +634,18 @@ public class ChatActivity extends AppCompatActivity {
         });
     }
 
-    private void updateLastMessageInfo(String lastMessage, long timestamp, String messageType) {
-        userChatsRef.child(currentUserId).child(recipientId).child("lastMessage").setValue(lastMessage);
-        userChatsRef.child(currentUserId).child(recipientId).child("timestamp").setValue(timestamp);
-        userChatsRef.child(currentUserId).child(recipientId).child("lastMessageSenderId").setValue(currentUserId);
-        userChatsRef.child(currentUserId).child(recipientId).child("unreadCount").setValue(0);
-        userChatsRef.child(currentUserId).child(recipientId).child("messageType").setValue(messageType);
+    private void updateLastMessageInfo(String lastMessage, String messageType) {
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("lastMessage", lastMessage);
+        updates.put("timestamp", ServerValue.TIMESTAMP);
+        updates.put("lastMessageSenderId", currentUserId);
+        updates.put("messageType", messageType);
 
+        userChatsRef.child(currentUserId).child(recipientId).updateChildren(updates);
+
+        // Для получателя увеличиваем unreadCount
         userChatsRef.child(recipientId).child(currentUserId).child("lastMessage").setValue(lastMessage);
-        userChatsRef.child(recipientId).child(currentUserId).child("timestamp").setValue(timestamp);
+        userChatsRef.child(recipientId).child(currentUserId).child("timestamp").setValue(ServerValue.TIMESTAMP);
         userChatsRef.child(recipientId).child(currentUserId).child("lastMessageSenderId").setValue(currentUserId);
         userChatsRef.child(recipientId).child(currentUserId).child("messageType").setValue(messageType);
 
@@ -601,7 +660,8 @@ public class ChatActivity extends AppCompatActivity {
                                 currentUnreadCount = count;
                             }
                         }
-                        userChatsRef.child(recipientId).child(currentUserId).child("unreadCount").setValue(currentUnreadCount + 1);
+                        userChatsRef.child(recipientId).child(currentUserId).child("unreadCount")
+                                .setValue(currentUnreadCount + 1);
                     }
 
                     @Override
@@ -704,7 +764,6 @@ public class ChatActivity extends AppCompatActivity {
         executorService.shutdown();
     }
 
-    // ИСПРАВЛЕННЫЙ МЕТОД loadMessages()
     private void loadMessages() {
         showLoading(true);
 
@@ -721,13 +780,13 @@ public class ChatActivity extends AppCompatActivity {
                             continue;
                         }
 
-                        Map<String, Object> messageData = (Map<String, Object>) messageSnapshot.getValue();
-                        if (messageData == null) continue;
-
                         Message message = new Message();
                         message.setId(messageId);
 
-                        // Устанавливаем все поля
+                        // Используем getValue() для автоматического маппинга
+                        Map<String, Object> messageData = (Map<String, Object>) messageSnapshot.getValue();
+                        if (messageData == null) continue;
+
                         if (messageData.containsKey("text")) {
                             message.setText((String) messageData.get("text"));
                         }
@@ -744,6 +803,7 @@ public class ChatActivity extends AppCompatActivity {
                             } else if (timestampObj instanceof Integer) {
                                 message.setTimestamp(((Integer) timestampObj).longValue());
                             } else {
+                                // Если timestamp не число, используем текущее время
                                 message.setTimestamp(System.currentTimeMillis());
                             }
                         }
@@ -761,12 +821,10 @@ public class ChatActivity extends AppCompatActivity {
                         if (messageData.containsKey("fileName")) {
                             message.setFileName((String) messageData.get("fileName"));
                         }
-
-                        // ВАЖНО: Логируем для отладки
-                        Log.d(TAG, "Загружено сообщение: ID=" + message.getId() +
-                                ", SenderId=" + message.getSenderId() +
-                                ", CurrentUserId=" + currentUserId +
-                                ", Type=" + message.getMessageType());
+                        if (messageData.containsKey("edited")) {
+                            Object editedObj = messageData.get("edited");
+                            message.setEdited(editedObj instanceof Boolean ? (Boolean) editedObj : false);
+                        }
 
                         messagesList.add(message);
 
@@ -775,18 +833,11 @@ public class ChatActivity extends AppCompatActivity {
                     }
                 }
 
-                // Сортируем по времени
-                Collections.sort(messagesList, new Comparator<Message>() {
-                    @Override
-                    public int compare(Message m1, Message m2) {
-                        return Long.compare(m1.getTimestamp(), m2.getTimestamp());
-                    }
-                });
+                // Сортируем по timestamp (старые -> новые)
+                Collections.sort(messagesList, (m1, m2) -> Long.compare(m1.getTimestamp(), m2.getTimestamp()));
 
                 updateMessagePositions();
                 messagesAdapter.setMessages(messagesList);
-
-                Log.d(TAG, "Всего загружено сообщений: " + messagesList.size());
 
                 scrollToBottom();
                 markMessagesAsRead();
@@ -802,7 +853,8 @@ public class ChatActivity extends AppCompatActivity {
         });
     }
 
-    // ИСПРАВЛЕННЫЙ МЕТОД sendTextMessage()
+
+
     private void sendTextMessage() {
         String text = messageEditText.getText().toString().trim();
 
@@ -819,26 +871,23 @@ public class ChatActivity extends AppCompatActivity {
 
         long timestamp = System.currentTimeMillis();
 
-        // ВАЖНО: Убеждаемся, что все поля установлены правильно
         Map<String, Object> messageMap = new HashMap<>();
         messageMap.put("id", messageId);
         messageMap.put("text", text);
-        messageMap.put("senderId", currentUserId);  // ТЕКУЩИЙ ПОЛЬЗОВАТЕЛЬ - ОТПРАВИТЕЛЬ
-        messageMap.put("recipientId", recipientId); // ПОЛУЧАТЕЛЬ
-        messageMap.put("timestamp", timestamp);
+        messageMap.put("senderId", currentUserId);
+        messageMap.put("recipientId", recipientId);
+        messageMap.put("timestamp", ServerValue.TIMESTAMP);
         messageMap.put("chatId", chatId);
         messageMap.put("messageType", "text");
         messageMap.put("isRead", false);
         messageMap.put("readBy", new HashMap<String, Boolean>());
+        messageMap.put("edited", false);
 
-        Log.d(TAG, "Отправка сообщения: senderId=" + currentUserId + ", recipientId=" + recipientId);
-
-        // Создаем локальное сообщение
         Message message = new Message(
                 messageId,
                 text,
-                currentUserId,  // ОТПРАВИТЕЛЬ
-                recipientId,    // ПОЛУЧАТЕЛЬ
+                currentUserId,
+                recipientId,
                 timestamp,
                 chatId,
                 "text"
@@ -846,12 +895,10 @@ public class ChatActivity extends AppCompatActivity {
 
         addNewMessage(message);
 
-        // Сохраняем в Firebase
         chatRef.child(messageId).setValue(messageMap)
                 .addOnSuccessListener(aVoid -> {
-                    Log.d(TAG, "Сообщение отправлено: " + text);
                     messageEditText.setText("");
-                    updateLastMessageInfo(text, timestamp, "text");
+                    updateLastMessageInfo(text,  "text");
                 })
                 .addOnFailureListener(e -> {
                     Log.e(TAG, "Ошибка отправки сообщения: " + e.getMessage());
@@ -870,11 +917,6 @@ public class ChatActivity extends AppCompatActivity {
         messagesList.add(insertPosition, message);
         updateMessagePositions();
         messagesAdapter.notifyItemInserted(insertPosition);
-
-        // Логируем добавление сообщения
-        Log.d(TAG, "Добавлено сообщение в список: ID=" + message.getId() +
-                ", SenderId=" + message.getSenderId() +
-                ", isSent=" + message.getSenderId().equals(currentUserId));
     }
 
     private int findCorrectInsertPosition(Message newMessage) {
@@ -923,12 +965,11 @@ public class ChatActivity extends AppCompatActivity {
         long timestamp = System.currentTimeMillis();
         String messageText = getMessageTextForType(messageType);
 
-        // ВАЖНО: Убеждаемся, что senderId установлен правильно
         Message message = new Message(
                 messageId,
                 messageText,
-                currentUserId,  // ОТПРАВИТЕЛЬ
-                recipientId,    // ПОЛУЧАТЕЛЬ
+                currentUserId,
+                recipientId,
                 timestamp,
                 chatId,
                 messageType
@@ -945,18 +986,18 @@ public class ChatActivity extends AppCompatActivity {
         messageMap.put("text", messageText);
         messageMap.put("senderId", currentUserId);
         messageMap.put("recipientId", recipientId);
-        messageMap.put("timestamp", timestamp);
+        messageMap.put("timestamp", ServerValue.TIMESTAMP);
         messageMap.put("chatId", chatId);
         messageMap.put("messageType", messageType);
         messageMap.put("fileUrl", fileUrl);
         messageMap.put("fileName", fileName);
         messageMap.put("fileSize", 1024000);
         messageMap.put("isRead", false);
+        messageMap.put("edited", false);
 
         chatRef.child(messageId).setValue(messageMap)
                 .addOnSuccessListener(aVoid -> {
-                    Log.d(TAG, "Файл отправлен: " + fileUrl);
-                    updateLastMessageInfo(messageText, timestamp, messageType);
+                    updateLastMessageInfo(messageText,  messageType);
                 })
                 .addOnFailureListener(e -> {
                     Log.e(TAG, "Ошибка отправки файла: " + e.getMessage());
@@ -1075,511 +1116,6 @@ public class ChatActivity extends AppCompatActivity {
 
     interface VideoDurationCallback {
         void onDurationLoaded(long duration);
-    }
-
-    // ================ ВНУТРЕННИЙ КЛАСС АДАПТЕРА ================
-
-    public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
-        private static final int TYPE_SENT_TEXT = 1;
-        private static final int TYPE_RECEIVED_TEXT = 2;
-        private static final int TYPE_SENT_IMAGE = 3;
-        private static final int TYPE_RECEIVED_IMAGE = 4;
-        private static final int TYPE_SENT_VIDEO = 5;
-        private static final int TYPE_RECEIVED_VIDEO = 6;
-        private static final int TYPE_SENT_DOCUMENT = 7;
-        private static final int TYPE_RECEIVED_DOCUMENT = 8;
-
-        private List<Message> messagesList;
-        private String currentUserId;
-        private Context context;
-
-        public MessageAdapter(List<Message> messagesList, String currentUserId) {
-            this.messagesList = messagesList;
-            this.currentUserId = currentUserId;
-        }
-
-        public void setMessages(List<Message> messages) {
-            this.messagesList = messages;
-            notifyDataSetChanged();
-        }
-
-        @Override
-        public int getItemViewType(int position) {
-            Message message = messagesList.get(position);
-
-            if (currentUserId == null || message.getSenderId() == null) {
-                Log.e("MessageAdapter", "currentUserId или senderId = null");
-                return TYPE_RECEIVED_TEXT;
-            }
-
-            boolean isSent = message.getSenderId().equals(currentUserId);
-
-            // ВАЖНО: Логируем для отладки
-            Log.d("MessageAdapter", "Position=" + position +
-                    ", SenderId=" + message.getSenderId() +
-                    ", CurrentUserId=" + currentUserId +
-                    ", isSent=" + isSent +
-                    ", Type=" + message.getMessageType());
-
-            if (message.isTextMessage()) {
-                return isSent ? TYPE_SENT_TEXT : TYPE_RECEIVED_TEXT;
-            } else if (message.isImageMessage()) {
-                return isSent ? TYPE_SENT_IMAGE : TYPE_RECEIVED_IMAGE;
-            } else if (message.isVideoMessage()) {
-                return isSent ? TYPE_SENT_VIDEO : TYPE_RECEIVED_VIDEO;
-            } else if (message.isDocumentMessage()) {
-                return isSent ? TYPE_SENT_DOCUMENT : TYPE_RECEIVED_DOCUMENT;
-            }
-
-            return isSent ? TYPE_SENT_TEXT : TYPE_RECEIVED_TEXT;
-        }
-
-        @NonNull
-        @Override
-        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            LayoutInflater inflater = LayoutInflater.from(parent.getContext());
-            context = parent.getContext();
-
-            switch (viewType) {
-                case TYPE_SENT_IMAGE:
-                    return new SentImageViewHolder(inflater.inflate(R.layout.item_image_sent, parent, false));
-                case TYPE_RECEIVED_IMAGE:
-                    return new ReceivedImageViewHolder(inflater.inflate(R.layout.item_image_received, parent, false));
-                case TYPE_SENT_VIDEO:
-                    return new SentVideoViewHolder(inflater.inflate(R.layout.item_video_sent, parent, false));
-                case TYPE_RECEIVED_VIDEO:
-                    return new ReceivedVideoViewHolder(inflater.inflate(R.layout.item_video_received, parent, false));
-                case TYPE_SENT_TEXT:
-                    return new SentMessageViewHolder(inflater.inflate(R.layout.item_message_send, parent, false));
-                case TYPE_RECEIVED_TEXT:
-                    return new ReceivedMessageViewHolder(inflater.inflate(R.layout.item_message_received, parent, false));
-                case TYPE_SENT_DOCUMENT:
-                    return new SentMessageViewHolder(inflater.inflate(R.layout.item_message_send, parent, false));
-                case TYPE_RECEIVED_DOCUMENT:
-                    return new ReceivedMessageViewHolder(inflater.inflate(R.layout.item_message_received, parent, false));
-                default:
-                    return new SentMessageViewHolder(inflater.inflate(R.layout.item_message_send, parent, false));
-            }
-        }
-
-        @Override
-        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-            Message message = messagesList.get(position);
-
-            if (holder instanceof SentImageViewHolder) {
-                ((SentImageViewHolder) holder).bind(message);
-            } else if (holder instanceof ReceivedImageViewHolder) {
-                ((ReceivedImageViewHolder) holder).bind(message);
-            } else if (holder instanceof SentVideoViewHolder) {
-                ((SentVideoViewHolder) holder).bind(message);
-            } else if (holder instanceof ReceivedVideoViewHolder) {
-                ((ReceivedVideoViewHolder) holder).bind(message);
-            } else if (holder instanceof SentMessageViewHolder) {
-                ((SentMessageViewHolder) holder).bind(message);
-            } else if (holder instanceof ReceivedMessageViewHolder) {
-                ((ReceivedMessageViewHolder) holder).bind(message);
-            }
-        }
-
-        @Override
-        public int getItemCount() {
-            return messagesList.size();
-        }
-
-        // ViewHolder для отправленных изображений
-        class SentImageViewHolder extends RecyclerView.ViewHolder {
-            private ImageView imageMessage;
-            private TextView messageTime;
-            private ProgressBar imageProgress;
-
-            public SentImageViewHolder(@NonNull View itemView) {
-                super(itemView);
-                imageMessage = itemView.findViewById(R.id.imageMessage);
-                messageTime = itemView.findViewById(R.id.messageTime);
-                imageProgress = itemView.findViewById(R.id.imageProgress);
-            }
-
-            public void bind(Message message) {
-                String imageUrl = message.getFileUrl();
-                messageTime.setText(formatTime(message.getTimestamp()));
-
-                if (imageUrl != null && !imageUrl.isEmpty()) {
-                    imageProgress.setVisibility(View.VISIBLE);
-
-                    Glide.with(context)
-                            .load(imageUrl)
-                            .placeholder(R.drawable.ic_image_placeholder)
-                            .error(R.drawable.ic_broken_image)
-                            .centerCrop()
-                            .into(new CustomTarget<Drawable>() {
-                                @Override
-                                public void onResourceReady(@NonNull Drawable resource, @Nullable Transition<? super Drawable> transition) {
-                                    imageProgress.setVisibility(View.GONE);
-                                    imageMessage.setImageDrawable(resource);
-                                }
-
-                                @Override
-                                public void onLoadCleared(@Nullable Drawable placeholder) {
-                                    imageProgress.setVisibility(View.GONE);
-                                }
-
-                                @Override
-                                public void onLoadFailed(@Nullable Drawable errorDrawable) {
-                                    super.onLoadFailed(errorDrawable);
-                                    imageProgress.setVisibility(View.GONE);
-                                    imageMessage.setImageDrawable(errorDrawable);
-                                }
-                            });
-
-                    imageMessage.setOnClickListener(v -> {
-                        Intent intent = new Intent(context, FullImageActivity.class);
-                        intent.putExtra("image_url", imageUrl);
-                        context.startActivity(intent);
-                    });
-                }
-            }
-        }
-
-        // ViewHolder для полученных изображений
-        class ReceivedImageViewHolder extends RecyclerView.ViewHolder {
-            private ImageView imageMessage;
-            private TextView messageTime;
-            private ProgressBar imageProgress;
-
-            public ReceivedImageViewHolder(@NonNull View itemView) {
-                super(itemView);
-                imageMessage = itemView.findViewById(R.id.imageMessage);
-                messageTime = itemView.findViewById(R.id.messageTime);
-                imageProgress = itemView.findViewById(R.id.imageProgress);
-            }
-
-            public void bind(Message message) {
-                String imageUrl = message.getFileUrl();
-                String filename = message.getFileName();
-                messageTime.setText(formatTime(message.getTimestamp()));
-
-                if (imageUrl != null && !imageUrl.isEmpty()) {
-                    imageProgress.setVisibility(View.VISIBLE);
-
-                    Glide.with(context)
-                            .load(imageUrl)
-                            .placeholder(R.drawable.ic_image_placeholder)
-                            .error(R.drawable.ic_broken_image)
-                            .centerCrop()
-                            .into(new CustomTarget<Drawable>() {
-                                @Override
-                                public void onResourceReady(@NonNull Drawable resource, @Nullable Transition<? super Drawable> transition) {
-                                    imageProgress.setVisibility(View.GONE);
-                                    imageMessage.setImageDrawable(resource);
-                                }
-
-                                @Override
-                                public void onLoadCleared(@Nullable Drawable placeholder) {
-                                    imageProgress.setVisibility(View.GONE);
-                                }
-
-                                @Override
-                                public void onLoadFailed(@Nullable Drawable errorDrawable) {
-                                    super.onLoadFailed(errorDrawable);
-                                    imageProgress.setVisibility(View.GONE);
-                                    imageMessage.setImageDrawable(errorDrawable);
-                                }
-                            });
-
-                    imageMessage.setOnClickListener(v -> {
-                        Intent intent = new Intent(context, FullImageActivity.class);
-                        intent.putExtra("image_url", imageUrl);
-                        intent.putExtra("FileName", filename);
-                        context.startActivity(intent);
-                    });
-                }
-            }
-        }
-
-        // ViewHolder для отправленных видео
-        class SentVideoViewHolder extends RecyclerView.ViewHolder {
-            private ImageView videoThumbnail;
-            private ImageView playButton;
-            private TextView videoDuration;
-            private TextView messageTime;
-            private ProgressBar videoProgress;
-
-            public SentVideoViewHolder(@NonNull View itemView) {
-                super(itemView);
-                videoThumbnail = itemView.findViewById(R.id.videoThumbnail);
-                playButton = itemView.findViewById(R.id.playButton);
-                videoDuration = itemView.findViewById(R.id.videoDuration);
-                messageTime = itemView.findViewById(R.id.messageTime);
-                videoProgress = itemView.findViewById(R.id.videoProgress);
-            }
-
-            public void bind(Message message) {
-                String videoUrl = message.getFileUrl();
-                String fileName = message.getFileName();
-                messageTime.setText(formatTime(message.getTimestamp()));
-
-                if (videoUrl != null && !videoUrl.isEmpty()) {
-                    videoProgress.setVisibility(View.VISIBLE);
-
-                    loadVideoThumbnail(videoUrl, new VideoThumbnailCallback() {
-                        @Override
-                        public void onThumbnailLoaded(Bitmap bitmap) {
-                            videoProgress.setVisibility(View.GONE);
-
-                            int radius = 48;
-                            Bitmap roundedBitmap = getRoundedCornerBitmap(bitmap, radius);
-
-                            if (roundedBitmap != null) {
-                                videoThumbnail.setImageBitmap(roundedBitmap);
-                            } else {
-                                videoThumbnail.setImageBitmap(bitmap);
-                            }
-
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                                videoThumbnail.setClipToOutline(true);
-                                videoThumbnail.setOutlineProvider(new ViewOutlineProvider() {
-                                    @Override
-                                    public void getOutline(View view, Outline outline) {
-                                        outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
-                                    }
-                                });
-                            }
-
-                            getVideoDuration(videoUrl, duration -> {
-                                if (duration > 0) {
-                                    videoDuration.setText(formatDuration(duration));
-                                    videoDuration.setVisibility(View.VISIBLE);
-                                }
-                            });
-                        }
-
-                        @Override
-                        public void onError() {
-                            videoProgress.setVisibility(View.GONE);
-                            videoThumbnail.setImageResource(R.drawable.ic_video_placeholder);
-                        }
-                    });
-
-                    playButton.setOnClickListener(v -> playVideo(videoUrl, fileName));
-                    videoThumbnail.setOnClickListener(v -> playVideo(videoUrl, fileName));
-                }
-            }
-        }
-
-        // ViewHolder для полученных видео
-        class ReceivedVideoViewHolder extends RecyclerView.ViewHolder {
-            private ImageView videoThumbnail;
-            private ImageView playButton;
-            private TextView videoDuration;
-            private TextView messageTime;
-            private ProgressBar videoProgress;
-
-            public ReceivedVideoViewHolder(@NonNull View itemView) {
-                super(itemView);
-                videoThumbnail = itemView.findViewById(R.id.videoThumbnail);
-                playButton = itemView.findViewById(R.id.playButton);
-                videoDuration = itemView.findViewById(R.id.videoDuration);
-                messageTime = itemView.findViewById(R.id.messageTime);
-                videoProgress = itemView.findViewById(R.id.videoProgress);
-            }
-
-            public void bind(Message message) {
-                String videoUrl = message.getFileUrl();
-                String fileName = message.getFileName();
-                messageTime.setText(formatTime(message.getTimestamp()));
-
-                if (videoUrl != null && !videoUrl.isEmpty()) {
-                    videoProgress.setVisibility(View.VISIBLE);
-
-                    loadVideoThumbnail(videoUrl, new VideoThumbnailCallback() {
-                        @Override
-                        public void onThumbnailLoaded(Bitmap bitmap) {
-                            videoProgress.setVisibility(View.GONE);
-
-                            int radius = 48;
-                            Bitmap roundedBitmap = getRoundedCornerBitmap(bitmap, radius);
-
-                            if (roundedBitmap != null) {
-                                videoThumbnail.setImageBitmap(roundedBitmap);
-                            } else {
-                                videoThumbnail.setImageBitmap(bitmap);
-                            }
-
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                                videoThumbnail.setClipToOutline(true);
-                                videoThumbnail.setOutlineProvider(new ViewOutlineProvider() {
-                                    @Override
-                                    public void getOutline(View view, Outline outline) {
-                                        outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
-                                    }
-                                });
-                            }
-
-                            getVideoDuration(videoUrl, duration -> {
-                                if (duration > 0) {
-                                    videoDuration.setText(formatDuration(duration));
-                                    videoDuration.setVisibility(View.VISIBLE);
-                                }
-                            });
-                        }
-
-                        @Override
-                        public void onError() {
-                            videoProgress.setVisibility(View.GONE);
-                            videoThumbnail.setImageResource(R.drawable.ic_video_placeholder);
-                        }
-                    });
-
-                    playButton.setOnClickListener(v -> playVideo(videoUrl, fileName));
-                    videoThumbnail.setOnClickListener(v -> playVideo(videoUrl, fileName));
-                }
-            }
-        }
-
-        // ViewHolder для отправленных текстовых сообщений
-        class SentMessageViewHolder extends RecyclerView.ViewHolder {
-            private TextView messageText;
-            private TextView messageTime;
-            private LinearLayout messageLayout;
-
-            public SentMessageViewHolder(@NonNull View itemView) {
-                super(itemView);
-                messageText = itemView.findViewById(R.id.messageText);
-                messageTime = itemView.findViewById(R.id.messageTime);
-                messageLayout = itemView.findViewById(R.id.messageLayout);
-            }
-
-            public void bind(Message message) {
-                if (message.isTextMessage()) {
-                    messageText.setText(message.getText());
-                    messageLayout.setOnClickListener(null);
-                } else if (message.isImageMessage()) {
-                    messageText.setText("🖼️ Изображение");
-                    setupImageClick(message);
-                } else if (message.isVideoMessage()) {
-                    messageText.setText("🎥 Видео");
-                    setupVideoClick(message);
-                } else if (message.isDocumentMessage()) {
-                    String fileName = message.getFileName();
-                    messageText.setText("📄 " + (fileName != null ? fileName : "Документ"));
-                    setupDocumentClick(message);
-                }
-                messageTime.setText(formatTime(message.getTimestamp()));
-            }
-
-            private void setupImageClick(Message message) {
-                messageLayout.setOnClickListener(v -> {
-                    String imageUrl = message.getFileUrl();
-                    if (imageUrl != null && !imageUrl.isEmpty()) {
-                        Intent intent = new Intent(context, FullImageActivity.class);
-                        intent.putExtra("image_url", imageUrl);
-                        context.startActivity(intent);
-                    }
-                });
-            }
-
-            private void setupVideoClick(Message message) {
-                messageLayout.setOnClickListener(v -> {
-                    String videoUrl = message.getFileUrl();
-                    String fileName = message.getFileName();
-                    if (videoUrl != null && !videoUrl.isEmpty()) {
-                        playVideo(videoUrl, fileName);
-                    } else {
-                        Toast.makeText(context, "Видео не найдено", Toast.LENGTH_SHORT).show();
-                    }
-                });
-            }
-
-            private void setupDocumentClick(Message message) {
-                messageLayout.setOnClickListener(v -> {
-                    String fileUrl = message.getFileUrl();
-                    String fileName = message.getFileName();
-                    if (fileUrl != null && !fileUrl.isEmpty()) {
-                        downloadDocument(fileUrl, fileName);
-                    } else {
-                        Toast.makeText(context, "Документ не найден", Toast.LENGTH_SHORT).show();
-                    }
-                });
-            }
-        }
-
-        // ViewHolder для полученных текстовых сообщений
-        class ReceivedMessageViewHolder extends RecyclerView.ViewHolder {
-            private TextView messageText;
-            private TextView messageTime;
-            private LinearLayout messageLayout;
-
-            public ReceivedMessageViewHolder(@NonNull View itemView) {
-                super(itemView);
-                messageText = itemView.findViewById(R.id.messageText);
-                messageTime = itemView.findViewById(R.id.messageTime);
-                messageLayout = itemView.findViewById(R.id.messageLayout);
-            }
-
-            public void bind(Message message) {
-                if (message.isTextMessage()) {
-                    messageText.setText(message.getText());
-                    messageLayout.setOnClickListener(null);
-                } else if (message.isImageMessage()) {
-                    messageText.setText("🖼️ Изображение");
-                    setupImageClick(message);
-                } else if (message.isVideoMessage()) {
-                    messageText.setText("🎥 Видео");
-                    setupVideoClick(message);
-                } else if (message.isDocumentMessage()) {
-                    String fileName = message.getFileName();
-                    messageText.setText("📄 " + (fileName != null ? fileName : "Документ"));
-                    setupDocumentClick(message);
-                }
-                messageTime.setText(formatTime(message.getTimestamp()));
-            }
-
-            private void setupImageClick(Message message) {
-                messageLayout.setOnClickListener(v -> {
-                    String imageUrl = message.getFileUrl();
-                    String filename = message.getFileName();
-                    if (imageUrl != null && !imageUrl.isEmpty()) {
-                        Intent intent = new Intent(context, FullImageActivity.class);
-                        intent.putExtra("image_url", imageUrl);
-                        intent.putExtra("FileName", filename);
-                        context.startActivity(intent);
-                    }
-                });
-            }
-
-            private void setupVideoClick(Message message) {
-                messageLayout.setOnClickListener(v -> {
-                    String videoUrl = message.getFileUrl();
-                    String fileName = message.getFileName();
-                    if (videoUrl != null && !videoUrl.isEmpty()) {
-                        playVideo(videoUrl, fileName);
-                    } else {
-                        Toast.makeText(context, "Видео не найдено", Toast.LENGTH_SHORT).show();
-                    }
-                });
-            }
-
-            private void setupDocumentClick(Message message) {
-                messageLayout.setOnClickListener(v -> {
-                    String fileUrl = message.getFileUrl();
-                    String fileName = message.getFileName();
-                    if (fileUrl != null && !fileUrl.isEmpty()) {
-                        downloadDocument(fileUrl, fileName);
-                    } else {
-                        Toast.makeText(context, "Документ не найден", Toast.LENGTH_SHORT).show();
-                    }
-                });
-            }
-        }
-
-        private String formatTime(long timestamp) {
-            try {
-                SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
-                return sdf.format(new Date(timestamp));
-            } catch (Exception e) {
-                return "";
-            }
-        }
     }
 
     // ================ МЕТОДЫ ДЛЯ СКАЧИВАНИЯ ФАЙЛОВ ================
@@ -1775,6 +1311,661 @@ public class ChatActivity extends AppCompatActivity {
                 return "application/pdf";
             default:
                 return "*/*";
+        }
+    }
+
+    interface OnMessageActionListener {
+        void onMessageEdit(Message message);
+        void onMessageDelete(Message message);
+    }
+
+
+    public void setupRecyclerView() {
+        messagesAdapter = new MessageAdapter(messagesList, currentUserId);
+
+        messagesAdapter.setOnMessageActionListener(new OnMessageActionListener() {
+            @Override
+            public void onMessageEdit(Message message) {
+                showEditMessageDialog(message);
+            }
+
+            @Override
+            public void onMessageDelete(Message message) {
+                showDeleteMessageDialog(message);
+            }
+        });
+
+        LinearLayoutManager layoutManager = new LinearLayoutManager(this);
+        layoutManager.setStackFromEnd(true);
+        messagesRecyclerView.setLayoutManager(layoutManager);
+        messagesRecyclerView.setAdapter(messagesAdapter);
+
+        messagesAdapter.registerAdapterDataObserver(new RecyclerView.AdapterDataObserver() {
+            @Override
+            public void onItemRangeInserted(int positionStart, int itemCount) {
+                super.onItemRangeInserted(positionStart, itemCount);
+                if (positionStart == messagesList.size() - 1) {
+                    scrollToBottom();
+                }
+            }
+        });
+
+
+    }
+
+    private class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+        private static final int TYPE_SENT_TEXT = 1;
+        private static final int TYPE_RECEIVED_TEXT = 2;
+        private static final int TYPE_SENT_IMAGE = 3;
+        private static final int TYPE_RECEIVED_IMAGE = 4;
+        private static final int TYPE_SENT_VIDEO = 5;
+        private static final int TYPE_RECEIVED_VIDEO = 6;
+        private static final int TYPE_SENT_DOCUMENT = 7;
+        private static final int TYPE_RECEIVED_DOCUMENT = 8;
+
+        private List<Message> messagesList;
+        private String currentUserId;
+        private Context context;
+
+        // Интерфейс для обработки действий с сообщениями (без public)
+
+
+        private OnMessageActionListener actionListener;
+
+        public MessageAdapter(List<Message> messagesList, String currentUserId) {
+            this.messagesList = messagesList;
+            this.currentUserId = currentUserId;
+        }
+
+        public void setOnMessageActionListener(OnMessageActionListener listener) {
+            this.actionListener = listener;
+        }
+
+        public void setMessages(List<Message> messages) {
+            this.messagesList = messages;
+            notifyDataSetChanged();
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            Message message = messagesList.get(position);
+
+            if (currentUserId == null || message.getSenderId() == null) {
+                return TYPE_RECEIVED_TEXT;
+            }
+
+            boolean isSent = message.getSenderId().equals(currentUserId);
+
+            if (message.isTextMessage()) {
+                return isSent ? TYPE_SENT_TEXT : TYPE_RECEIVED_TEXT;
+            } else if (message.isImageMessage()) {
+                return isSent ? TYPE_SENT_IMAGE : TYPE_RECEIVED_IMAGE;
+            } else if (message.isVideoMessage()) {
+                return isSent ? TYPE_SENT_VIDEO : TYPE_RECEIVED_VIDEO;
+            } else if (message.isDocumentMessage()) {
+                return isSent ? TYPE_SENT_DOCUMENT : TYPE_RECEIVED_DOCUMENT;
+            }
+
+            return isSent ? TYPE_SENT_TEXT : TYPE_RECEIVED_TEXT;
+        }
+
+        @NonNull
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            LayoutInflater inflater = LayoutInflater.from(parent.getContext());
+            context = parent.getContext();
+
+            switch (viewType) {
+                case TYPE_SENT_IMAGE:
+                    return new SentImageViewHolder(inflater.inflate(R.layout.item_image_sent, parent, false));
+                case TYPE_RECEIVED_IMAGE:
+                    return new ReceivedImageViewHolder(inflater.inflate(R.layout.item_image_received, parent, false));
+                case TYPE_SENT_VIDEO:
+                    return new SentVideoViewHolder(inflater.inflate(R.layout.item_video_sent, parent, false));
+                case TYPE_RECEIVED_VIDEO:
+                    return new ReceivedVideoViewHolder(inflater.inflate(R.layout.item_video_received, parent, false));
+                case TYPE_SENT_TEXT:
+                    return new SentMessageViewHolder(inflater.inflate(R.layout.item_message_send, parent, false));
+                case TYPE_RECEIVED_TEXT:
+                    return new ReceivedMessageViewHolder(inflater.inflate(R.layout.item_message_received, parent, false));
+                case TYPE_SENT_DOCUMENT:
+                    return new SentMessageViewHolder(inflater.inflate(R.layout.item_message_send, parent, false));
+                case TYPE_RECEIVED_DOCUMENT:
+                    return new ReceivedMessageViewHolder(inflater.inflate(R.layout.item_message_received, parent, false));
+                default:
+                    return new SentMessageViewHolder(inflater.inflate(R.layout.item_message_send, parent, false));
+            }
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+            Message message = messagesList.get(position);
+
+            if (holder instanceof SentImageViewHolder) {
+                ((SentImageViewHolder) holder).bind(message);
+            } else if (holder instanceof ReceivedImageViewHolder) {
+                ((ReceivedImageViewHolder) holder).bind(message);
+            } else if (holder instanceof SentVideoViewHolder) {
+                ((SentVideoViewHolder) holder).bind(message);
+            } else if (holder instanceof ReceivedVideoViewHolder) {
+                ((ReceivedVideoViewHolder) holder).bind(message);
+            } else if (holder instanceof SentMessageViewHolder) {
+                ((SentMessageViewHolder) holder).bind(message);
+            } else if (holder instanceof ReceivedMessageViewHolder) {
+                ((ReceivedMessageViewHolder) holder).bind(message);
+            }
+        }
+
+        @Override
+        public int getItemCount() {
+            return messagesList.size();
+        }
+
+        // Общий метод для показа меню
+        private void showMessageOptionsDialog(Message message, View anchorView, boolean canEdit) {
+            PopupMenu popup = new PopupMenu(context, anchorView, Gravity.END);
+            popup.inflate(R.menu.message_context_menu);
+
+            boolean isMyMessage = message.getSenderId().equals(currentUserId);
+
+            popup.getMenu().findItem(R.id.action_edit).setVisible(canEdit && isMyMessage);
+            popup.getMenu().findItem(R.id.action_delete).setVisible(isMyMessage);
+
+            popup.setOnMenuItemClickListener(item -> {
+                int itemId = item.getItemId();
+                if (itemId == R.id.action_edit) {
+                    if (actionListener != null) {
+                        actionListener.onMessageEdit(message);
+                    }
+                    return true;
+                } else if (itemId == R.id.action_delete) {
+                    if (actionListener != null) {
+                        actionListener.onMessageDelete(message);
+                    }
+                    return true;
+                }
+                return false;
+            });
+
+            popup.show();
+        }
+
+        private String formatTime(long timestamp) {
+            try {
+                SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
+                return sdf.format(new Date(timestamp));
+            } catch (Exception e) {
+                return "";
+            }
+        }
+
+        // ViewHolder для отправленных изображений
+        class SentImageViewHolder extends RecyclerView.ViewHolder {
+            private ImageView imageMessage;
+            private TextView messageTime;
+            private ProgressBar imageProgress;
+
+            public SentImageViewHolder(@NonNull View itemView) {
+                super(itemView);
+                imageMessage = itemView.findViewById(R.id.imageMessage);
+                messageTime = itemView.findViewById(R.id.messageTime);
+                imageProgress = itemView.findViewById(R.id.imageProgress);
+            }
+
+            public void bind(Message message) {
+                String imageUrl = message.getFileUrl();
+                messageTime.setText(formatTime(message.getTimestamp()));
+
+                itemView.setOnLongClickListener(v -> {
+                    int position = getAdapterPosition();
+                    if (position != RecyclerView.NO_POSITION && actionListener != null) {
+                        showMessageOptionsDialog(message, v, false);
+                        return true;
+                    }
+                    return false;
+                });
+
+                if (imageUrl != null && !imageUrl.isEmpty()) {
+                    imageProgress.setVisibility(View.VISIBLE);
+
+                    Glide.with(context)
+                            .load(imageUrl)
+                            .placeholder(R.drawable.ic_image_placeholder)
+                            .error(R.drawable.ic_broken_image)
+                            .centerCrop()
+                            .into(new CustomTarget<Drawable>() {
+                                @Override
+                                public void onResourceReady(@NonNull Drawable resource, @Nullable Transition<? super Drawable> transition) {
+                                    imageProgress.setVisibility(View.GONE);
+                                    imageMessage.setImageDrawable(resource);
+                                }
+
+                                @Override
+                                public void onLoadCleared(@Nullable Drawable placeholder) {
+                                    imageProgress.setVisibility(View.GONE);
+                                }
+
+                                @Override
+                                public void onLoadFailed(@Nullable Drawable errorDrawable) {
+                                    super.onLoadFailed(errorDrawable);
+                                    imageProgress.setVisibility(View.GONE);
+                                    imageMessage.setImageDrawable(errorDrawable);
+                                }
+                            });
+
+                    imageMessage.setOnClickListener(v -> {
+                        Intent intent = new Intent(context, FullImageActivity.class);
+                        intent.putExtra("image_url", imageUrl);
+                        context.startActivity(intent);
+                    });
+                }
+            }
+        }
+
+        // ViewHolder для полученных изображений
+        class ReceivedImageViewHolder extends RecyclerView.ViewHolder {
+            private ImageView imageMessage;
+            private TextView messageTime;
+            private ProgressBar imageProgress;
+
+            public ReceivedImageViewHolder(@NonNull View itemView) {
+                super(itemView);
+                imageMessage = itemView.findViewById(R.id.imageMessage);
+                messageTime = itemView.findViewById(R.id.messageTime);
+                imageProgress = itemView.findViewById(R.id.imageProgress);
+            }
+
+            public void bind(Message message) {
+                String imageUrl = message.getFileUrl();
+                String filename = message.getFileName();
+                messageTime.setText(formatTime(message.getTimestamp()));
+
+                itemView.setOnLongClickListener(v -> {
+                    int position = getAdapterPosition();
+                    if (position != RecyclerView.NO_POSITION && actionListener != null) {
+                        showMessageOptionsDialog(message, v, false);
+                        return true;
+                    }
+                    return false;
+                });
+
+                if (imageUrl != null && !imageUrl.isEmpty()) {
+                    imageProgress.setVisibility(View.VISIBLE);
+
+                    Glide.with(context)
+                            .load(imageUrl)
+                            .placeholder(R.drawable.ic_image_placeholder)
+                            .error(R.drawable.ic_broken_image)
+                            .centerCrop()
+                            .into(new CustomTarget<Drawable>() {
+                                @Override
+                                public void onResourceReady(@NonNull Drawable resource, @Nullable Transition<? super Drawable> transition) {
+                                    imageProgress.setVisibility(View.GONE);
+                                    imageMessage.setImageDrawable(resource);
+                                }
+
+                                @Override
+                                public void onLoadCleared(@Nullable Drawable placeholder) {
+                                    imageProgress.setVisibility(View.GONE);
+                                }
+
+                                @Override
+                                public void onLoadFailed(@Nullable Drawable errorDrawable) {
+                                    super.onLoadFailed(errorDrawable);
+                                    imageProgress.setVisibility(View.GONE);
+                                    imageMessage.setImageDrawable(errorDrawable);
+                                }
+                            });
+
+                    imageMessage.setOnClickListener(v -> {
+                        Intent intent = new Intent(context, FullImageActivity.class);
+                        intent.putExtra("image_url", imageUrl);
+                        intent.putExtra("FileName", filename);
+                        context.startActivity(intent);
+                    });
+                }
+            }
+        }
+
+        // ViewHolder для отправленных видео
+        class SentVideoViewHolder extends RecyclerView.ViewHolder {
+            private ImageView videoThumbnail;
+            private ImageView playButton;
+            private TextView videoDuration;
+            private TextView messageTime;
+            private ProgressBar videoProgress;
+
+            public SentVideoViewHolder(@NonNull View itemView) {
+                super(itemView);
+                videoThumbnail = itemView.findViewById(R.id.videoThumbnail);
+                playButton = itemView.findViewById(R.id.playButton);
+                videoDuration = itemView.findViewById(R.id.videoDuration);
+                messageTime = itemView.findViewById(R.id.messageTime);
+                videoProgress = itemView.findViewById(R.id.videoProgress);
+            }
+
+            public void bind(Message message) {
+                String videoUrl = message.getFileUrl();
+                String fileName = message.getFileName();
+                messageTime.setText(formatTime(message.getTimestamp()));
+
+                itemView.setOnLongClickListener(v -> {
+                    int position = getAdapterPosition();
+                    if (position != RecyclerView.NO_POSITION && actionListener != null) {
+                        showMessageOptionsDialog(message, v, false);
+                        return true;
+                    }
+                    return false;
+                });
+
+                if (videoUrl != null && !videoUrl.isEmpty()) {
+                    videoProgress.setVisibility(View.VISIBLE);
+
+                    // Используем методы внешнего класса ChatActivity
+                    ChatActivity.this.loadVideoThumbnail(videoUrl, new VideoThumbnailCallback() {
+                        @Override
+                        public void onThumbnailLoaded(Bitmap bitmap) {
+                            videoProgress.setVisibility(View.GONE);
+
+                            int radius = 48;
+                            Bitmap roundedBitmap = getRoundedCornerBitmap(bitmap, radius);
+
+                            if (roundedBitmap != null) {
+                                videoThumbnail.setImageBitmap(roundedBitmap);
+                            } else {
+                                videoThumbnail.setImageBitmap(bitmap);
+                            }
+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                videoThumbnail.setClipToOutline(true);
+                                videoThumbnail.setOutlineProvider(new ViewOutlineProvider() {
+                                    @Override
+                                    public void getOutline(View view, Outline outline) {
+                                        outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
+                                    }
+                                });
+                            }
+
+                            ChatActivity.this.getVideoDuration(videoUrl, duration -> {
+                                if (duration > 0) {
+                                    videoDuration.setText(formatDuration(duration));
+                                    videoDuration.setVisibility(View.VISIBLE);
+                                }
+                            });
+                        }
+
+                        @Override
+                        public void onError() {
+                            videoProgress.setVisibility(View.GONE);
+                            videoThumbnail.setImageResource(R.drawable.ic_video_placeholder);
+                        }
+                    });
+
+                    playButton.setOnClickListener(v -> ChatActivity.this.playVideo(videoUrl, fileName));
+                    videoThumbnail.setOnClickListener(v -> ChatActivity.this.playVideo(videoUrl, fileName));
+                }
+            }
+        }
+
+        // ViewHolder для полученных видео
+        class ReceivedVideoViewHolder extends RecyclerView.ViewHolder {
+            private ImageView videoThumbnail;
+            private ImageView playButton;
+            private TextView videoDuration;
+            private TextView messageTime;
+            private ProgressBar videoProgress;
+
+            public ReceivedVideoViewHolder(@NonNull View itemView) {
+                super(itemView);
+                videoThumbnail = itemView.findViewById(R.id.videoThumbnail);
+                playButton = itemView.findViewById(R.id.playButton);
+                videoDuration = itemView.findViewById(R.id.videoDuration);
+                messageTime = itemView.findViewById(R.id.messageTime);
+                videoProgress = itemView.findViewById(R.id.videoProgress);
+            }
+
+            public void bind(Message message) {
+                String videoUrl = message.getFileUrl();
+                String fileName = message.getFileName();
+                messageTime.setText(formatTime(message.getTimestamp()));
+
+                itemView.setOnLongClickListener(v -> {
+                    int position = getAdapterPosition();
+                    if (position != RecyclerView.NO_POSITION && actionListener != null) {
+                        showMessageOptionsDialog(message, v, false);
+                        return true;
+                    }
+                    return false;
+                });
+
+                if (videoUrl != null && !videoUrl.isEmpty()) {
+                    videoProgress.setVisibility(View.VISIBLE);
+
+                    ChatActivity.this.loadVideoThumbnail(videoUrl, new VideoThumbnailCallback() {
+                        @Override
+                        public void onThumbnailLoaded(Bitmap bitmap) {
+                            videoProgress.setVisibility(View.GONE);
+
+                            int radius = 48;
+                            Bitmap roundedBitmap = getRoundedCornerBitmap(bitmap, radius);
+
+                            if (roundedBitmap != null) {
+                                videoThumbnail.setImageBitmap(roundedBitmap);
+                            } else {
+                                videoThumbnail.setImageBitmap(bitmap);
+                            }
+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                videoThumbnail.setClipToOutline(true);
+                                videoThumbnail.setOutlineProvider(new ViewOutlineProvider() {
+                                    @Override
+                                    public void getOutline(View view, Outline outline) {
+                                        outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
+                                    }
+                                });
+                            }
+
+                            ChatActivity.this.getVideoDuration(videoUrl, duration -> {
+                                if (duration > 0) {
+                                    videoDuration.setText(formatDuration(duration));
+                                    videoDuration.setVisibility(View.VISIBLE);
+                                }
+                            });
+                        }
+
+                        @Override
+                        public void onError() {
+                            videoProgress.setVisibility(View.GONE);
+                            videoThumbnail.setImageResource(R.drawable.ic_video_placeholder);
+                        }
+                    });
+
+                    playButton.setOnClickListener(v -> ChatActivity.this.playVideo(videoUrl, fileName));
+                    videoThumbnail.setOnClickListener(v -> ChatActivity.this.playVideo(videoUrl, fileName));
+                }
+            }
+        }
+
+        // ViewHolder для отправленных текстовых сообщений
+        class SentMessageViewHolder extends RecyclerView.ViewHolder {
+            private TextView messageText;
+            private TextView messageTime;
+            private LinearLayout messageLayout;
+
+            public SentMessageViewHolder(@NonNull View itemView) {
+                super(itemView);
+                messageText = itemView.findViewById(R.id.messageText);
+                messageTime = itemView.findViewById(R.id.messageTime);
+                messageLayout = itemView.findViewById(R.id.messageLayout);
+            }
+
+            public void bind(Message message) {
+                itemView.setOnLongClickListener(v -> {
+                    int position = getAdapterPosition();
+                    if (position != RecyclerView.NO_POSITION && actionListener != null) {
+                        boolean canEdit = message.isTextMessage();
+                        showMessageOptionsDialog(message, v, canEdit);
+                        return true;
+                    }
+                    return false;
+                });
+
+                messageLayout.setOnLongClickListener(v -> {
+                    int position = getAdapterPosition();
+                    if (position != RecyclerView.NO_POSITION && actionListener != null) {
+                        boolean canEdit = message.isTextMessage();
+                        showMessageOptionsDialog(message, v, canEdit);
+                        return true;
+                    }
+                    return false;
+                });
+
+                if (message.isTextMessage()) {
+                    String text = message.getText();
+                    if (message.isEdited()) {
+                        text = text + " (изм.)";
+                    }
+                    messageText.setText(text);
+                    messageLayout.setOnClickListener(null);
+                } else if (message.isImageMessage()) {
+                    messageText.setText("🖼️ Изображение");
+                    setupImageClick(message);
+                } else if (message.isVideoMessage()) {
+                    messageText.setText("🎥 Видео");
+                    setupVideoClick(message);
+                } else if (message.isDocumentMessage()) {
+                    String fileName = message.getFileName();
+                    messageText.setText("📄 " + (fileName != null ? fileName : "Документ"));
+                    setupDocumentClick(message);
+                }
+                messageTime.setText(formatTime(message.getTimestamp()));
+            }
+
+            private void setupImageClick(Message message) {
+                messageLayout.setOnClickListener(v -> {
+                    String imageUrl = message.getFileUrl();
+                    if (imageUrl != null && !imageUrl.isEmpty()) {
+                        Intent intent = new Intent(context, FullImageActivity.class);
+                        intent.putExtra("image_url", imageUrl);
+                        context.startActivity(intent);
+                    }
+                });
+            }
+
+            private void setupVideoClick(Message message) {
+                messageLayout.setOnClickListener(v -> {
+                    String videoUrl = message.getFileUrl();
+                    String fileName = message.getFileName();
+                    if (videoUrl != null && !videoUrl.isEmpty()) {
+                        ChatActivity.this.playVideo(videoUrl, fileName);
+                    } else {
+                        Toast.makeText(context, "Видео не найдено", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+
+            private void setupDocumentClick(Message message) {
+                messageLayout.setOnClickListener(v -> {
+                    String fileUrl = message.getFileUrl();
+                    String fileName = message.getFileName();
+                    if (fileUrl != null && !fileUrl.isEmpty()) {
+                        ChatActivity.this.downloadDocument(fileUrl, fileName);
+                    } else {
+                        Toast.makeText(context, "Документ не найден", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+        }
+
+        // ViewHolder для полученных текстовых сообщений
+        class ReceivedMessageViewHolder extends RecyclerView.ViewHolder {
+            private TextView messageText;
+            private TextView messageTime;
+            private LinearLayout messageLayout;
+
+            public ReceivedMessageViewHolder(@NonNull View itemView) {
+                super(itemView);
+                messageText = itemView.findViewById(R.id.messageText);
+                messageTime = itemView.findViewById(R.id.messageTime);
+                messageLayout = itemView.findViewById(R.id.messageLayout);
+            }
+
+            public void bind(Message message) {
+                itemView.setOnLongClickListener(v -> {
+                    int position = getAdapterPosition();
+                    if (position != RecyclerView.NO_POSITION && actionListener != null) {
+                        showMessageOptionsDialog(message, v, false);
+                        return true;
+                    }
+                    return false;
+                });
+
+                messageLayout.setOnLongClickListener(v -> {
+                    int position = getAdapterPosition();
+                    if (position != RecyclerView.NO_POSITION && actionListener != null) {
+                        showMessageOptionsDialog(message, v, false);
+                        return true;
+                    }
+                    return false;
+                });
+
+                if (message.isTextMessage()) {
+                    String text = message.getText();
+                    if (message.isEdited()) {
+                        text = text + " (изм.)";
+                    }
+                    messageText.setText(text);
+                    messageLayout.setOnClickListener(null);
+                } else if (message.isImageMessage()) {
+                    messageText.setText("🖼️ Изображение");
+                    setupImageClick(message);
+                } else if (message.isVideoMessage()) {
+                    messageText.setText("🎥 Видео");
+                    setupVideoClick(message);
+                } else if (message.isDocumentMessage()) {
+                    String fileName = message.getFileName();
+                    messageText.setText("📄 " + (fileName != null ? fileName : "Документ"));
+                    setupDocumentClick(message);
+                }
+                messageTime.setText(formatTime(message.getTimestamp()));
+            }
+
+            private void setupImageClick(Message message) {
+                messageLayout.setOnClickListener(v -> {
+                    String imageUrl = message.getFileUrl();
+                    String filename = message.getFileName();
+                    if (imageUrl != null && !imageUrl.isEmpty()) {
+                        Intent intent = new Intent(context, FullImageActivity.class);
+                        intent.putExtra("image_url", imageUrl);
+                        intent.putExtra("FileName", filename);
+                        context.startActivity(intent);
+                    }
+                });
+            }
+
+            private void setupVideoClick(Message message) {
+                messageLayout.setOnClickListener(v -> {
+                    String videoUrl = message.getFileUrl();
+                    String fileName = message.getFileName();
+                    if (videoUrl != null && !videoUrl.isEmpty()) {
+                        ChatActivity.this.playVideo(videoUrl, fileName);
+                    } else {
+                        Toast.makeText(context, "Видео не найдено", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
+
+            private void setupDocumentClick(Message message) {
+                messageLayout.setOnClickListener(v -> {
+                    String fileUrl = message.getFileUrl();
+                    String fileName = message.getFileName();
+                    if (fileUrl != null && !fileUrl.isEmpty()) {
+                        ChatActivity.this.downloadDocument(fileUrl, fileName);
+                    } else {
+                        Toast.makeText(context, "Документ не найден", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
         }
     }
 }

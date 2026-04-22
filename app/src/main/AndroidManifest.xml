@@ -80,7 +80,8 @@
             android:theme="@style/Theme.MyTelegram" /> <!-- Chat Activities -->
         <activity
             android:name=".ChatActivity"
-            android:exported="false"
+
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.MyTelegram.NoActionBar" />
         <activity
             android:name=".ChouseContactActivity"
