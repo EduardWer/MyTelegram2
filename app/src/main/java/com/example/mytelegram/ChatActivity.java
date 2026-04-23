@@ -312,7 +312,11 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     public void closeMediaPanel() {
-        mediaPanelLayout.setVisibility(View.GONE);
+        if (bottomSheetBehavior != null) {
+            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+            // Сбрасываем peekHeight на случай если он изменился
+            bottomSheetBehavior.setPeekHeight(1000);
+        }
     }
 
     // Метод для отправки медиа из галереи
@@ -516,8 +520,17 @@ public class ChatActivity extends AppCompatActivity {
 
         // Кнопка прикрепления (скрепка) - открывает/закрывает BottomSheet
         photoButton.setOnClickListener(v -> {
-            if (bottomSheetBehavior.getState() == BottomSheetBehavior.STATE_HIDDEN) {
+            Log.d(TAG, "Photo button clicked, bottomSheet state: " + bottomSheetBehavior.getState());
+
+            // Проверяем состояние панели
+            int currentState = bottomSheetBehavior.getState();
+
+            if (currentState == BottomSheetBehavior.STATE_HIDDEN) {
+                // Убеждаемся, что панель можно показать
+                bottomSheetBehavior.setHideable(false); // Временно запрещаем скрытие
                 bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
+                bottomSheetBehavior.setHideable(true); // Возвращаем возможность скрытия
+
                 // Скрываем клавиатуру
                 InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
                 if (imm != null) {
@@ -719,6 +732,19 @@ public class ChatActivity extends AppCompatActivity {
         startActivityForResult(intent, REQUEST_DOCUMENT_PICK);
     }
 
+    private void resetBottomSheet() {
+        if (bottomSheetBehavior != null) {
+            // Сбрасываем состояние
+            bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+            bottomSheetBehavior.setHideable(true);
+
+            // Небольшая задержка для гарантии
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                bottomSheetBehavior.setPeekHeight(1000);
+            }, 100);
+        }
+    }
+
     private File createImageFile() {
         String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
         String imageFileName = "JPEG_" + timeStamp + "_";
@@ -738,6 +764,8 @@ public class ChatActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
 
         if (resultCode == RESULT_OK) {
+
+            resetBottomSheet();
             switch (requestCode) {
                 case REQUEST_IMAGE_CAPTURE:
                     currentFileType = "image";
@@ -789,6 +817,7 @@ public class ChatActivity extends AppCompatActivity {
         if (tempFile == null) {
             showUploadProgress(false);
             Toast.makeText(this, "Не удалось создать временный файл", Toast.LENGTH_SHORT).show();
+
             return;
         }
 
@@ -814,7 +843,9 @@ public class ChatActivity extends AppCompatActivity {
                             // Удаляем временный файл
                             if (finalTempFile.exists()) {
                                 finalTempFile.delete();
+                                resetBottomSheet();
                             }
+
                         });
                     }
 
@@ -827,6 +858,8 @@ public class ChatActivity extends AppCompatActivity {
                             // Удаляем временный файл
                             if (finalTempFile.exists()) {
                                 finalTempFile.delete();
+                                resetBottomSheet();
+
                             }
                         });
                     }
@@ -836,6 +869,7 @@ public class ChatActivity extends AppCompatActivity {
                         runOnUiThread(() -> {
                             if (!isUploadCancelled) {
                                 updateUploadProgress(progress, finalFileName);
+                                resetBottomSheet();
                             }
                         });
                     }

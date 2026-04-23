@@ -52,6 +52,9 @@
             android:exported="false" />
         <activity
             android:name=".UserProfileActivity"
+
+            android:windowSoftInputMode="adjustNothing"
+
             android:exported="false" />
         <activity
             android:name=".LoginActivity"
@@ -81,14 +84,16 @@
         <activity
             android:name=".ChatActivity"
 
-            android:windowSoftInputMode="adjustResize"
+            android:windowSoftInputMode="adjustPan|stateHidden"
             android:theme="@style/Theme.MyTelegram.NoActionBar" />
         <activity
             android:name=".ChouseContactActivity"
+            android:windowSoftInputMode="adjustPan|stateHidden"
             android:exported="false"
             android:theme="@style/Theme.MyTelegram.NoActionBar" /> <!-- Profile Activity -->
         <activity
             android:name=".ProfileActivity"
+            android:windowSoftInputMode="adjustPan|stateHidden"
             android:exported="false"
             android:theme="@style/Theme.MyTelegram.NoActionBar" /> <!-- FileProvider для камеры и обмена файлами -->
         <provider
