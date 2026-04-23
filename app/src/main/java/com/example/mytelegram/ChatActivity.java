@@ -2,6 +2,8 @@ package com.example.mytelegram;
 
 import android.app.ProgressDialog;
 import android.content.Context;
+import android.graphics.BitmapFactory;
+import android.view.inputmethod.InputMethodManager;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
@@ -29,6 +31,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
+import android.view.inputmethod.InputMethodManager;
 import android.webkit.MimeTypeMap;
 import android.widget.EditText;
 import android.widget.ImageButton;
@@ -48,6 +51,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
 import com.bumptech.glide.request.target.CustomTarget;
 import com.bumptech.glide.request.transition.Transition;
 import com.google.firebase.auth.FirebaseAuth;
@@ -216,6 +220,29 @@ public class ChatActivity extends AppCompatActivity {
         cancelEditButton = findViewById(R.id.cancelEditButton);
 
 
+        // новые
+        mediaPanelLayout = findViewById(R.id.mediaPanelLayout);
+        mediaTabs = findViewById(R.id.mediaTabs);
+        mediaViewPager = findViewById(R.id.mediaViewPager);
+        closeMediaPanelButton = findViewById(R.id.closeMediaPanelButton);
+
+        if (mediaViewPager != null && mediaTabs != null) {
+            MediaPagerAdapter pagerAdapter = new MediaPagerAdapter(this);
+            mediaViewPager.setAdapter(pagerAdapter);
+
+            new com.google.android.material.tabs.TabLayoutMediator(
+                    mediaTabs,
+                    mediaViewPager,
+                    (tab, position) -> {
+                        if (position == 0) {
+                            tab.setText("Галерея");
+                        } else {
+                            tab.setText("Документы");
+                        }
+                    }
+            ).attach();
+        }
+
         messagesList = new ArrayList<>();
         messagePositions = new HashMap<>();
 
@@ -228,6 +255,149 @@ public class ChatActivity extends AppCompatActivity {
 
 
 // Длок для эксперементов
+
+    private LinearLayout mediaPanelLayout;
+    private com.google.android.material.tabs.TabLayout mediaTabs;
+    private androidx.viewpager2.widget.ViewPager2 mediaViewPager;
+    private ImageButton closeMediaPanelButton;
+
+
+
+    private void toggleMediaPanel() {
+        if (mediaPanelLayout.getVisibility() == View.VISIBLE) {
+            closeMediaPanel();
+        } else {
+            openMediaPanel();
+        }
+    }
+
+    private void openMediaPanel() {
+        mediaPanelLayout.setVisibility(View.VISIBLE);
+        // Скрываем клавиатуру если открыта
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        imm.hideSoftInputFromWindow(messageEditText.getWindowToken(), 0);
+    }
+
+    public void closeMediaPanel() {
+        mediaPanelLayout.setVisibility(View.GONE);
+    }
+
+    // Метод для отправки медиа из галереи
+    public void sendMediaFromGallery(Uri uri, String type) {
+        closeMediaPanel();
+        currentFileUri = uri;
+
+        if ("image".equals(type)) {
+            currentFileType = "image";
+            uploadFile(uri, "image");
+        } else if ("video".equals(type)) {
+            currentFileType = "video";
+            uploadFile(uri, "video");
+        }
+    }
+
+    // Метод для отправки документа
+    public void sendDocumentFromPicker(Uri uri) {
+        closeMediaPanel();
+        currentFileUri = uri;
+        currentFileType = "document";
+        uploadFile(uri, "document");
+    }
+
+
+
+
+    private File createCompressedImageFile(Uri uri) {
+        try {
+            // Сначала получаем размеры изображения без загрузки всего bitmap
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+
+            InputStream inputStream = getContentResolver().openInputStream(uri);
+            BitmapFactory.decodeStream(inputStream, null, options);
+            inputStream.close();
+
+            // Вычисляем коэффициент сжатия
+            int maxSize = 1920;
+            int scale = 1;
+
+            if (options.outWidth > maxSize || options.outHeight > maxSize) {
+                scale = (int) Math.pow(2, (int) Math.round(
+                        Math.log(maxSize / (double) Math.max(options.outWidth, options.outHeight)) / Math.log(0.5)));
+            }
+
+            // Загружаем сжатое изображение
+            options.inJustDecodeBounds = false;
+            options.inSampleSize = scale;
+
+            inputStream = getContentResolver().openInputStream(uri);
+            Bitmap bitmap = BitmapFactory.decodeStream(inputStream, null, options);
+            inputStream.close();
+
+            if (bitmap == null) return null;
+
+            // Дополнительно сжимаем если всё ещё большое
+            int width = bitmap.getWidth();
+            int height = bitmap.getHeight();
+
+            if (width > maxSize || height > maxSize) {
+                float ratio = (float) width / height;
+                if (ratio > 1) {
+                    width = maxSize;
+                    height = (int) (maxSize / ratio);
+                } else {
+                    height = maxSize;
+                    width = (int) (maxSize * ratio);
+                }
+                bitmap = Bitmap.createScaledBitmap(bitmap, width, height, true);
+            }
+
+            // Сохраняем сжатое изображение
+            File tempFile = new File(getCacheDir(), "compressed_" + System.currentTimeMillis() + ".jpg");
+            FileOutputStream out = new FileOutputStream(tempFile);
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out);
+            out.flush();
+            out.close();
+
+            bitmap.recycle();
+
+            return tempFile;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Ошибка сжатия изображения: " + e.getMessage());
+            return createTempFileFromUri(uri);
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+// _______________________________________________________________________
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     private void updateEditedMessage() {
     if (editingMessageId == null || editingMessage == null) {
         return;
@@ -299,16 +469,6 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-
-
-
-
-// ____________________________________________________________________________________________________________________________________________________________________
-
-
-
-
-
     private void setupClickListeners() {
         backButton.setOnClickListener(v -> navigateToHomeFragment());
 
@@ -327,14 +487,44 @@ public class ChatActivity extends AppCompatActivity {
             }
         });
 
-        photoButton.setOnClickListener(v -> showAttachmentDialog());
+        photoButton.setOnClickListener(v -> toggleMediaPanel());
         cancelUploadButton.setOnClickListener(v -> cancelUpload());
 
         if (cancelEditButton != null) {
             cancelEditButton.setOnClickListener(v -> cancelEditing());
         }
 
+        if (closeMediaPanelButton != null) {
+            closeMediaPanelButton.setOnClickListener(v -> closeMediaPanel());
+        }
+
+        // ВЫЗОВ setupMediaPanel() ЗДЕСЬ
+        setupMediaPanel();
+
         messageEditText.setOnClickListener(v -> scrollToBottom());
+    }
+
+    private void setupMediaPanel() {
+        // Проверяем что View инициализированы
+        if (mediaViewPager == null || mediaTabs == null) {
+            Log.e(TAG, "mediaViewPager or mediaTabs is null");
+            return;
+        }
+
+        MediaPagerAdapter pagerAdapter = new MediaPagerAdapter(this);
+        mediaViewPager.setAdapter(pagerAdapter);
+
+        new com.google.android.material.tabs.TabLayoutMediator(
+                mediaTabs,
+                mediaViewPager,
+                (tab, position) -> {
+                    if (position == 0) {
+                        tab.setText("Галерея");
+                    } else {
+                        tab.setText("Документы");
+                    }
+                }
+        ).attach();
     }
 
     // Диалог удаления сообщения
@@ -385,24 +575,7 @@ public class ChatActivity extends AppCompatActivity {
         scrollToMessage(message);
     }
 
-    // Обновление сообщения
-//    private void updateMessage(Message message, String newText) {
-//        String messageId = message.getId();
-//
-//        Map<String, Object> updates = new HashMap<>();
-//        updates.put("text", newText);
-//        updates.put("edited", true);
-//        updates.put("editedAt", System.currentTimeMillis());
-//
-//        chatRef.child(messageId).updateChildren(updates)
-//                .addOnSuccessListener(aVoid -> {
-//                    Toast.makeText(this, "Сообщение изменено", Toast.LENGTH_SHORT).show();
-//                })
-//                .addOnFailureListener(e -> {
-//                    Log.e(TAG, "Ошибка изменения сообщения: " + e.getMessage());
-//                    Toast.makeText(this, "Ошибка изменения сообщения", Toast.LENGTH_SHORT).show();
-//                });
-//    }
+
 
     private void showAttachmentDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
@@ -456,7 +629,7 @@ public class ChatActivity extends AppCompatActivity {
         startActivityForResult(intent, REQUEST_VIDEO_PICK);
     }
 
-    private void pickDocument() {
+    public void pickDocument() {
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
         intent.setType("*/*");
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -522,7 +695,14 @@ public class ChatActivity extends AppCompatActivity {
         String originalFileName = getFileName(fileUri);
         uploadFileName.setText(originalFileName);
 
-        File tempFile = createTempFileFromUri(fileUri);
+        // Создаем временный файл (сжимаем если изображение)
+        File tempFile;
+        if ("image".equals(fileType)) {
+            tempFile = createCompressedImageFile(fileUri);
+        } else {
+            tempFile = createTempFileFromUri(fileUri);
+        }
+
         if (tempFile == null) {
             showUploadProgress(false);
             Toast.makeText(this, "Не удалось создать временный файл", Toast.LENGTH_SHORT).show();
@@ -548,7 +728,10 @@ public class ChatActivity extends AppCompatActivity {
                             showUploadProgress(false);
                             sendFileMessage(fileType, fileUrl, finalFileName);
                             Toast.makeText(ChatActivity.this, "Файл загружен", Toast.LENGTH_SHORT).show();
-                            finalTempFile.delete();
+                            // Удаляем временный файл
+                            if (finalTempFile.exists()) {
+                                finalTempFile.delete();
+                            }
                         });
                     }
 
@@ -558,13 +741,20 @@ public class ChatActivity extends AppCompatActivity {
                             showUploadProgress(false);
                             Log.e(TAG, "Ошибка загрузки: " + error);
                             Toast.makeText(ChatActivity.this, "Ошибка загрузки: " + error, Toast.LENGTH_LONG).show();
-                            finalTempFile.delete();
+                            // Удаляем временный файл
+                            if (finalTempFile.exists()) {
+                                finalTempFile.delete();
+                            }
                         });
                     }
 
                     @Override
                     public void onProgress(int progress) {
-                        runOnUiThread(() -> updateUploadProgress(progress, finalFileName));
+                        runOnUiThread(() -> {
+                            if (!isUploadCancelled) {
+                                updateUploadProgress(progress, finalFileName);
+                            }
+                        });
                     }
                 });
     }
@@ -1616,6 +1806,9 @@ public class ChatActivity extends AppCompatActivity {
                 String imageUrl = message.getFileUrl();
                 messageTime.setText(formatTime(message.getTimestamp()));
 
+                // Очищаем ImageView
+                imageMessage.setImageDrawable(null);
+
                 itemView.setOnLongClickListener(v -> {
                     int position = getAdapterPosition();
                     if (position != RecyclerView.NO_POSITION && actionListener != null) {
@@ -1632,7 +1825,10 @@ public class ChatActivity extends AppCompatActivity {
                             .load(imageUrl)
                             .placeholder(R.drawable.ic_image_placeholder)
                             .error(R.drawable.ic_broken_image)
+                            .override(800, 800) // ВАЖНО: Ограничиваем размер изображения!
                             .centerCrop()
+                            .diskCacheStrategy(DiskCacheStrategy.ALL)
+                            .skipMemoryCache(false)
                             .into(new CustomTarget<Drawable>() {
                                 @Override
                                 public void onResourceReady(@NonNull Drawable resource, @Nullable Transition<? super Drawable> transition) {
@@ -1680,6 +1876,9 @@ public class ChatActivity extends AppCompatActivity {
                 String filename = message.getFileName();
                 messageTime.setText(formatTime(message.getTimestamp()));
 
+                // Очищаем ImageView
+                imageMessage.setImageDrawable(null);
+
                 itemView.setOnLongClickListener(v -> {
                     int position = getAdapterPosition();
                     if (position != RecyclerView.NO_POSITION && actionListener != null) {
@@ -1696,7 +1895,10 @@ public class ChatActivity extends AppCompatActivity {
                             .load(imageUrl)
                             .placeholder(R.drawable.ic_image_placeholder)
                             .error(R.drawable.ic_broken_image)
+                            .override(800, 800) // ВАЖНО: Ограничиваем размер изображения!
                             .centerCrop()
+                            .diskCacheStrategy(DiskCacheStrategy.ALL)
+                            .skipMemoryCache(false)
                             .into(new CustomTarget<Drawable>() {
                                 @Override
                                 public void onResourceReady(@NonNull Drawable resource, @Nullable Transition<? super Drawable> transition) {
@@ -1728,6 +1930,11 @@ public class ChatActivity extends AppCompatActivity {
         }
 
         // ViewHolder для отправленных видео
+
+
+
+
+
         class SentVideoViewHolder extends RecyclerView.ViewHolder {
             private ImageView videoThumbnail;
             private ImageView playButton;
