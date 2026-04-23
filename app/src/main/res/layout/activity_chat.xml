@@ -1,291 +1,320 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:animateLayoutChanges="true"
     android:background="#FFFFFF"
-    android:orientation="vertical"
     tools:context=".ChatActivity">
 
-    <!-- Верхняя панель -->
+    <!-- Основной контент (сообщения и панель ввода) -->
     <LinearLayout
-        android:id="@+id/topBar"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:background="@color/white"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp">
+        android:layout_height="match_parent"
+        android:animateLayoutChanges="true"
+        android:orientation="vertical">
 
-        <ImageButton
-            android:id="@+id/backButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Назад"
-            android:scaleType="center"
-            android:src="@drawable/ic_arrow_back"
-            app:tint="@color/black" />
-
-        <ImageView
-            android:id="@+id/userAvatar"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="12dp"
-            android:background="@drawable/circle_background"
-            android:contentDescription="Аватар пользователя"
-            android:scaleType="centerCrop"
-            android:src="@drawable/ic_person" />
-
+        <!-- Верхняя панель -->
         <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp">
-
-            <TextView
-                android:id="@+id/userName"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Имя пользователя"
-                android:textColor="@color/black"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/userStatus"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="был(а) недавно"
-                android:textColor="@color/black"
-                android:textSize="12sp" />
-
-        </LinearLayout>
-
-    </LinearLayout>
-
-    <!-- Прогресс загрузки файлов -->
-    <LinearLayout
-        android:id="@+id/uploadProgressLayout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#E3F2FD"
-        android:orientation="horizontal"
-        android:padding="12dp"
-        android:visibility="gone">
-
-        <ImageView
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:layout_marginEnd="8dp"
-            android:src="@drawable/ic_file_upload"
-            app:tint="#4285F4" />
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/uploadFileName"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:text="Загрузка файла..."
-                android:textColor="#333333"
-                android:textSize="14sp" />
-
-            <ProgressBar
-                android:id="@+id/uploadProgressBar"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="8dp"
-                android:layout_marginTop="4dp" />
-
-            <TextView
-                android:id="@+id/uploadProgressText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="0%"
-                android:textColor="#666666"
-                android:textSize="12sp" />
-
-        </LinearLayout>
-
-        <ImageButton
-            android:id="@+id/cancelUploadButton"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:layout_marginStart="8dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_close"
-            app:tint="#666666" />
-
-    </LinearLayout>
-
-    <!-- Панель редактирования сообщения -->
-    <LinearLayout
-        android:id="@+id/editMessageLayout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#FFF3E0"
-        android:orientation="horizontal"
-        android:padding="12dp"
-        android:visibility="gone">
-
-        <ImageView
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:layout_gravity="center_vertical"
-            android:layout_marginEnd="8dp"
-            android:src="@drawable/ic_edit"
-            app:tint="#FF9800" />
-
-        <TextView
-            android:id="@+id/editMessageLabel"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_gravity="center_vertical"
-            android:text="Редактирование сообщения"
-            android:textColor="#E65100"
-            android:textSize="14sp" />
-
-        <ImageButton
-            android:id="@+id/cancelEditButton"
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:layout_gravity="center_vertical"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_close"
-            app:tint="#FF9800" />
-
-    </LinearLayout>
-
-    <!-- RecyclerView для сообщений -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/recyclerViewMessages"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:background="@color/white"
-        android:padding="8dp"
-        android:scrollbars="vertical" />
-
-    <ProgressBar
-        android:id="@+id/progressBar"
-        android:layout_width="175dp"
-        android:layout_height="164dp"
-        android:layout_gravity="center"
-        android:visibility="gone" />
-
-    <!-- Нижняя панель с медиафайлами -->
-    <LinearLayout
-        android:id="@+id/mediaPanelLayout"
-        android:layout_width="match_parent"
-        android:layout_height="300dp"
-        android:background="#F5F5F5"
-        android:orientation="vertical"
-        android:visibility="gone">
-
-        <!-- Заголовок панели -->
-        <LinearLayout
+            android:id="@+id/topBar"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:background="#FFFFFF"
+            android:layout_height="56dp"
+            android:background="@color/white"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingStart="16dp"
             android:paddingEnd="16dp">
 
-            <TextView
+            <ImageButton
+                android:id="@+id/backButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Назад"
+                android:scaleType="center"
+                android:src="@drawable/ic_arrow_back"
+                app:tint="@color/black" />
+
+            <ImageView
+                android:id="@+id/userAvatar"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="12dp"
+                android:background="@drawable/circle_background"
+                android:contentDescription="Аватар пользователя"
+                android:scaleType="centerCrop"
+                android:src="@drawable/ic_person" />
+
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Медиафайлы"
-                android:textColor="#333333"
-                android:textSize="16sp"
-                android:textStyle="bold" />
+                android:orientation="vertical"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp">
+
+                <TextView
+                    android:id="@+id/userName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Имя пользователя"
+                    android:textColor="@color/black"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/userStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="был(а) недавно"
+                    android:textColor="@color/black"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- Прогресс загрузки -->
+        <LinearLayout
+            android:id="@+id/uploadProgressLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#E3F2FD"
+            android:orientation="horizontal"
+            android:padding="12dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="8dp"
+                android:src="@drawable/ic_file_upload"
+                app:tint="#4285F4" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/uploadFileName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:text="Загрузка файла..."
+                    android:textColor="#333333"
+                    android:textSize="14sp" />
+
+                <ProgressBar
+                    android:id="@+id/uploadProgressBar"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="8dp"
+                    android:layout_marginTop="4dp" />
+
+                <TextView
+                    android:id="@+id/uploadProgressText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="0%"
+                    android:textColor="#666666"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
 
             <ImageButton
-                android:id="@+id/closeMediaPanelButton"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:id="@+id/cancelUploadButton"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginStart="8dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@drawable/ic_close"
                 app:tint="#666666" />
 
         </LinearLayout>
 
-        <!-- Табы для переключения -->
-        <com.google.android.material.tabs.TabLayout
-            android:id="@+id/mediaTabs"
+        <!-- Панель редактирования -->
+        <LinearLayout
+            android:id="@+id/editMessageLayout"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:background="#FFFFFF"
-            app:tabIndicatorColor="#4285F4"
-            app:tabSelectedTextColor="#4285F4"
-            app:tabTextColor="#666666" />
+            android:layout_height="wrap_content"
+            android:background="#FFF3E0"
+            android:orientation="horizontal"
+            android:padding="12dp"
+            android:visibility="gone">
 
-        <!-- Контейнер для фрагментов с медиа -->
-        <androidx.viewpager2.widget.ViewPager2
-            android:id="@+id/mediaViewPager"
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="center_vertical"
+                android:layout_marginEnd="8dp"
+                android:src="@drawable/ic_edit"
+                app:tint="#FF9800" />
+
+            <TextView
+                android:id="@+id/editMessageLabel"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_gravity="center_vertical"
+                android:text="Редактирование сообщения"
+                android:textColor="#E65100"
+                android:textSize="14sp" />
+
+            <ImageButton
+                android:id="@+id/cancelEditButton"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_gravity="center_vertical"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_close"
+                app:tint="#FF9800" />
+
+        </LinearLayout>
+
+        <!-- RecyclerView для сообщений -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerViewMessages"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1" />
-
-    </LinearLayout>
-
-    <!-- Панель ввода сообщения -->
-    <LinearLayout
-        android:id="@+id/inputLayout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#D7D7D7"
-        android:orientation="horizontal"
-        android:padding="12dp">
-
-        <ImageButton
-            android:id="@+id/photoButton"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginEnd="8dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Прикрепить файл"
-            android:scaleType="center"
-            android:src="@drawable/ic_attach_file" />
-
-        <EditText
-            android:id="@+id/messageEditText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:background="@drawable/edit_text_background"
-            android:hint="Введите сообщение"
-            android:inputType="textMultiLine"
-            android:maxLines="3"
-            android:minHeight="50dp"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:textColor="#000000"
-            android:textColorHint="#757575" />
+            android:background="@color/white"
+            android:padding="8dp"
+            android:scrollbars="vertical" />
 
-        <ImageButton
-            android:id="@+id/sendButton"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/rouded_buttons"
-            android:scaleType="center"
-            android:src="@drawable/ic_send" />
+        <ProgressBar
+            android:id="@+id/progressBar"
+            android:layout_width="175dp"
+            android:layout_height="164dp"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+
+        <!-- Панель ввода сообщения - ВСЕГДА ВИДНА -->
+        <LinearLayout
+            android:id="@+id/inputLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#F0F0F0"
+            android:orientation="horizontal"
+            android:padding="12dp"
+            android:elevation="4dp">
+
+            <ImageButton
+                android:id="@+id/photoButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Прикрепить файл"
+                android:scaleType="center"
+                android:src="@drawable/ic_attach_file" />
+
+            <EditText
+                android:id="@+id/messageEditText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:background="@drawable/edit_text_background"
+                android:hint="Введите сообщение"
+                android:inputType="textMultiLine"
+                android:maxLines="3"
+                android:minHeight="50dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:textColor="#000000"
+                android:textColorHint="#757575" />
+
+            <ImageButton
+                android:id="@+id/sendButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/rouded_buttons"
+                android:scaleType="center"
+                android:src="@drawable/ic_send" />
+        </LinearLayout>
+
     </LinearLayout>
 
-</LinearLayout>
+    <!-- Bottom Sheet для медиафайлов - ВЫЕЗЖАЕТ ПОВЕРХ ПАНЕЛИ ВВОДА -->
+    <FrameLayout
+        android:id="@+id/bottomSheet"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/transparent"
+        app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior"
+        app:behavior_hideable="true"
+        app:behavior_skipCollapsed="false">
+
+        <LinearLayout
+            android:id="@+id/mediaPanelLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#FFFFFF"
+            android:orientation="vertical"
+            app:behavior_hideable="true"
+            app:behavior_peekHeight="500dp">
+
+            <!-- Ручка для перетаскивания -->
+            <View
+                android:layout_width="40dp"
+                android:layout_height="4dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:background="#DDDDDD" />
+
+            <!-- Заголовок -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Медиафайлы"
+                    android:textColor="#333333"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <ImageButton
+                    android:id="@+id/closeMediaPanelButton"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_close"
+                    app:tint="#666666" />
+
+            </LinearLayout>
+
+            <!-- Табы -->
+            <com.google.android.material.tabs.TabLayout
+                android:id="@+id/mediaTabs"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="#FFFFFF"
+                app:tabIndicatorColor="#4285F4"
+                app:tabSelectedTextColor="#4285F4"
+                app:tabTextColor="#666666" />
+
+            <!-- ViewPager -->
+            <androidx.viewpager2.widget.ViewPager2
+                android:id="@+id/mediaViewPager"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+        </LinearLayout>
+
+    </FrameLayout>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

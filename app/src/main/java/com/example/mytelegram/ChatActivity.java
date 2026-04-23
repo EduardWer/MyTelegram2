@@ -34,6 +34,7 @@ import android.view.ViewOutlineProvider;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.MimeTypeMap;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -54,6 +55,7 @@ import com.bumptech.glide.Glide;
 import com.bumptech.glide.load.engine.DiskCacheStrategy;
 import com.bumptech.glide.request.target.CustomTarget;
 import com.bumptech.glide.request.transition.Transition;
+import com.google.android.material.bottomsheet.BottomSheetBehavior;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.DataSnapshot;
@@ -98,6 +100,13 @@ public class ChatActivity extends AppCompatActivity {
     private String editingMessageId = null;
     private Message editingMessage = null;
 
+
+    private FrameLayout bottomSheet;
+    private BottomSheetBehavior<FrameLayout> bottomSheetBehavior;
+    private LinearLayout mediaPanelLayout;
+    private com.google.android.material.tabs.TabLayout mediaTabs;
+    private androidx.viewpager2.widget.ViewPager2 mediaViewPager;
+    private ImageButton closeMediaPanelButton;
 
     private RecyclerView messagesRecyclerView;
     private MessageAdapter messagesAdapter;
@@ -219,13 +228,46 @@ public class ChatActivity extends AppCompatActivity {
         editMessageLabel = findViewById(R.id.editMessageLabel);
         cancelEditButton = findViewById(R.id.cancelEditButton);
 
+        // Инициализация BottomSheet
+        bottomSheet = findViewById(R.id.bottomSheet);
+        bottomSheetBehavior = BottomSheetBehavior.from(bottomSheet);
 
-        // новые
+        // ВАЖНО: Настройка для скрытия панели
+        bottomSheetBehavior.setHideable(true);
+        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+
+        // Устанавливаем высоту в свернутом состоянии
+        bottomSheetBehavior.setPeekHeight(1000);
+
+        bottomSheetBehavior.addBottomSheetCallback(new BottomSheetBehavior.BottomSheetCallback() {
+            @Override
+            public void onStateChanged(@NonNull View bottomSheet, int newState) {
+                switch (newState) {
+                    case BottomSheetBehavior.STATE_HIDDEN:
+                        Log.d(TAG, "BottomSheet: скрыта");
+                        break;
+                    case BottomSheetBehavior.STATE_EXPANDED:
+                        Log.d(TAG, "BottomSheet: развернута");
+                        break;
+                    case BottomSheetBehavior.STATE_COLLAPSED:
+                        Log.d(TAG, "BottomSheet: свернута");
+                        break;
+                }
+            }
+
+            @Override
+            public void onSlide(@NonNull View bottomSheet, float slideOffset) {
+                // Анимация слайда (можно использовать для затемнения фона)
+            }
+        });
+
+        // Инициализация элементов медиапанели
         mediaPanelLayout = findViewById(R.id.mediaPanelLayout);
         mediaTabs = findViewById(R.id.mediaTabs);
         mediaViewPager = findViewById(R.id.mediaViewPager);
         closeMediaPanelButton = findViewById(R.id.closeMediaPanelButton);
 
+        // Настройка ViewPager с табами
         if (mediaViewPager != null && mediaTabs != null) {
             MediaPagerAdapter pagerAdapter = new MediaPagerAdapter(this);
             mediaViewPager.setAdapter(pagerAdapter);
@@ -233,13 +275,7 @@ public class ChatActivity extends AppCompatActivity {
             new com.google.android.material.tabs.TabLayoutMediator(
                     mediaTabs,
                     mediaViewPager,
-                    (tab, position) -> {
-                        if (position == 0) {
-                            tab.setText("Галерея");
-                        } else {
-                            tab.setText("Документы");
-                        }
-                    }
+                    (tab, position) -> tab.setText(position == 0 ? "Галерея" : "Документы")
             ).attach();
         }
 
@@ -256,10 +292,7 @@ public class ChatActivity extends AppCompatActivity {
 
 // Длок для эксперементов
 
-    private LinearLayout mediaPanelLayout;
-    private com.google.android.material.tabs.TabLayout mediaTabs;
-    private androidx.viewpager2.widget.ViewPager2 mediaViewPager;
-    private ImageButton closeMediaPanelButton;
+
 
 
 
@@ -470,8 +503,10 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void setupClickListeners() {
+        // Кнопка назад
         backButton.setOnClickListener(v -> navigateToHomeFragment());
 
+        // Открытие профиля
         View topBar = findViewById(R.id.topBar);
         if (topBar != null) {
             topBar.setOnClickListener(v -> openUserProfile());
@@ -479,6 +514,21 @@ public class ChatActivity extends AppCompatActivity {
         userAvatar.setOnClickListener(v -> openUserProfile());
         userName.setOnClickListener(v -> openUserProfile());
 
+        // Кнопка прикрепления (скрепка) - открывает/закрывает BottomSheet
+        photoButton.setOnClickListener(v -> {
+            if (bottomSheetBehavior.getState() == BottomSheetBehavior.STATE_HIDDEN) {
+                bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
+                // Скрываем клавиатуру
+                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.hideSoftInputFromWindow(messageEditText.getWindowToken(), 0);
+                }
+            } else {
+                bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+            }
+        });
+
+        // Кнопка отправки сообщения
         sendButton.setOnClickListener(v -> {
             if (editingMessageId != null && !editingMessageId.isEmpty()) {
                 updateEditedMessage();
@@ -487,22 +537,55 @@ public class ChatActivity extends AppCompatActivity {
             }
         });
 
-        photoButton.setOnClickListener(v -> toggleMediaPanel());
+        // Кнопка отмены загрузки
         cancelUploadButton.setOnClickListener(v -> cancelUpload());
 
+        // Кнопка отмены редактирования
         if (cancelEditButton != null) {
             cancelEditButton.setOnClickListener(v -> cancelEditing());
         }
 
+        // Кнопка закрытия медиапанели
         if (closeMediaPanelButton != null) {
-            closeMediaPanelButton.setOnClickListener(v -> closeMediaPanel());
+            closeMediaPanelButton.setOnClickListener(v ->
+                    bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN)
+            );
         }
 
-        // ВЫЗОВ setupMediaPanel() ЗДЕСЬ
-        setupMediaPanel();
-
+        // Клик по полю ввода - прокрутка вниз
         messageEditText.setOnClickListener(v -> scrollToBottom());
     }
+
+
+    private void toggleBottomSheet() {
+        if (bottomSheetBehavior.getState() == BottomSheetBehavior.STATE_HIDDEN) {
+            showBottomSheet();
+        } else {
+            hideBottomSheet();
+        }
+    }
+
+    private void showBottomSheet() {
+        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
+
+        // Скрываем клавиатуру
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) {
+            imm.hideSoftInputFromWindow(messageEditText.getWindowToken(), 0);
+        }
+    }
+
+    private void hideBottomSheet() {
+        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
+    }
+
+
+
+    // Остальные методы...
+
+
+
+
 
     private void setupMediaPanel() {
         // Проверяем что View инициализированы
