@@ -1,23 +1,122 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="16dp">
+    android:orientation="vertical"
+    android:background="#FFFFFF">
 
-    <TextView
-
-        android:text="Информация о группе"
-        android:textSize="20sp"
-        android:textStyle="bold"
+    <!-- Шапка с аватаром и названием -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"/>
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="24dp"
+        android:background="#F5F5F5">
 
-    <TextView
-        android:id="@+id/groupInfoText"
+        <ImageView
+            android:id="@+id/groupAvatar"
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:src="@drawable/ic_person"
+            android:scaleType="centerCrop"
+            android:clipToOutline="true"
+            android:outlineProvider="background"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:id="@+id/groupName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Название группы"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="#333333"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/groupDescription"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Описание группы"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/groupMembersCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0 участников"
+            android:textSize="14sp"
+            android:textColor="#999999" />
+
+    </LinearLayout>
+
+    <!-- Заголовок и кнопка добавления -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:background="#FAFAFA">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Участники"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="#333333" />
+
+        <TextView
+            android:id="@+id/memberCountBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0"
+            android:textSize="14sp"
+            android:textColor="#999999"
+            android:layout_marginEnd="12dp" />
+
+        <Button
+            android:id="@+id/addMemberButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="+ Добавить"
+            android:textSize="12sp"
+            android:visibility="gone"
+            android:layout_marginEnd="8dp" />
+
+    </LinearLayout>
+
+    <!-- Список участников -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/membersRecyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="8dp" />
+
+    <!-- Прогресс -->
+    <ProgressBar
+        android:id="@+id/progressBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:visibility="gone" />
+
+    <!-- Кнопка "Покинуть/Удалить группу" -->
+    <Button
+        android:id="@+id/leaveGroupButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textSize="16sp"/>
+        android:layout_margin="16dp"
+        android:text="Покинуть группу"
+        android:textColor="#FFFFFF"
+        android:backgroundTint="#FF4444" />
 
 </LinearLayout>

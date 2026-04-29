@@ -3,6 +3,8 @@ package com.example.mytelegram;
 public class UserModel {
     private String uid;
     private String username;
+
+    private String email;
     private String status;
     private String phone;
     private String avatarUrl;
@@ -30,4 +32,13 @@ public class UserModel {
 
     public String getAvatarUrl() { return avatarUrl; }
     public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
+
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
 }

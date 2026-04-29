@@ -237,7 +237,7 @@ public class HomeFragment extends Fragment {
                         String participantId = users[0].equals(currentUserId) ? users[1] : users[0];
                         chat.setParticipantId(participantId);
                         loadParticipantInfo(participantId, chat);
-                        startOnlineListener(participantId, chat);   // ← слушаем онлайн
+                        startOnlineListener(participantId, chat);
                     } else {
                         chat.setChatType("group");
                         GroupInfo info = groupInfoMap.get(chatId);
@@ -255,7 +255,13 @@ public class HomeFragment extends Fragment {
                     }
 
                     loadLastMessageInfo(chatSnapshot, chat);
-                    loadedChats.put(chatId, chat);
+
+                    // Проверяем членство в группе для групповых чатов
+                    if (chat.isGroupChat()) {
+                        checkGroupMembership(chatId, chat);
+                    } else {
+                        loadedChats.put(chatId, chat);
+                    }
                 }
 
                 updateAdapter();
@@ -270,6 +276,49 @@ public class HomeFragment extends Fragment {
             }
         };
         databaseReference.child("chats").addValueEventListener(chatsListener);
+    }
+
+
+    // Проверка, что пользователь всё ещё участник группы
+    private void checkGroupMembership(String chatId, Chat chat) {
+        String groupId = chat.getGroupId();
+        if (TextUtils.isEmpty(groupId)) {
+            // Если groupId нет, ищем в мапе
+            groupId = chatIdToGroupId.get(chatId);
+        }
+
+        if (TextUtils.isEmpty(groupId)) {
+            // Не можем проверить - всё равно показываем
+            addToLoadedChats(chatId, chat);
+            return;
+        }
+
+        String finalGroupId = groupId;
+        databaseReference.child("groups").child(groupId).child("members").child(currentUserId)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        Boolean isMember = snapshot.getValue(Boolean.class);
+                        if (isMember != null && isMember) {
+                            // Пользователь всё ещё в группе
+                            addToLoadedChats(chatId, chat);
+                        } else {
+                            // Пользователь удален из группы - не показываем чат
+                            Log.d(TAG, "User removed from group: " + finalGroupId + ", chat: " + chatId);
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        // При ошибке всё равно показываем
+                        addToLoadedChats(chatId, chat);
+                    }
+                });
+    }
+
+    private void addToLoadedChats(String chatId, Chat chat) {
+        loadedChats.put(chatId, chat);
+        updateAdapter();
     }
 
     private boolean isPersonalChat(String chatId) {

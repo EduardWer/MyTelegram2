@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:gravity="center_vertical"
+    android:background="?attr/selectableItemBackground">
+
+    <ImageView
+        android:id="@+id/memberAvatar"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:src="@drawable/ic_person"
+        android:scaleType="centerCrop"
+        android:layout_marginEnd="12dp" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/memberName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Имя участника"
+            android:textSize="16sp"
+            android:textColor="#333333" />
+
+        <TextView
+            android:id="@+id/memberRole"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Участник"
+            android:textSize="12sp"
+            android:textColor="#999999"
+            android:layout_marginTop="2dp" />
+
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/removeMemberButton"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:src="@drawable/ic_close"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:visibility="gone"
+        android:contentDescription="Удалить участника" />
+
+</LinearLayout>
