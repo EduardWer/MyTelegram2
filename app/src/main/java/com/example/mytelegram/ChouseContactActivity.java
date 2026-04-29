@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.SearchView;
 import android.widget.TextView;
@@ -36,6 +37,8 @@ public class ChouseContactActivity extends AppCompatActivity {
     private RecyclerView contactsRecyclerView;
     private ContactAdapter adapter;
     private ProgressBar progressBar;
+
+    private Button createGroupButton;
     private TextView emptyStateText;
     private SearchView searchView;
     private final List<User> allContacts = new ArrayList<>();
@@ -69,6 +72,8 @@ public class ChouseContactActivity extends AppCompatActivity {
     }
 
     private void initViews() {
+
+        createGroupButton = findViewById(R.id.createGroupButton);
         // Находим все View элементы по их ID
         contactsRecyclerView = findViewById(R.id.contactsRecyclerView);
         progressBar = findViewById(R.id.progressBar);
@@ -83,6 +88,13 @@ public class ChouseContactActivity extends AppCompatActivity {
             Log.e("ChouseContactActivity", "emptyStateText not found in layout");
         }
     }
+
+    public void CreateGroup(View view) {
+        Intent intent = new Intent(this, CreateGroupActivity.class);
+        startActivity(intent);
+    }
+
+
 
     private void setupRecyclerView() {
         adapter = new ContactAdapter(filteredContacts, this::createOrOpenChat);

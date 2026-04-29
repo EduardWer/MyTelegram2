@@ -35,15 +35,20 @@
         android:theme="@style/Theme.MyTelegram"
         tools:targetApi="31">
         <activity
+            android:name=".GroupInfoActivity"
+            android:exported="false" />
+        <activity
+            android:name=".CreateGroupActivity"
+            android:exported="false" />
+        <activity
+            android:name=".GroupChatActivity"
+            android:exported="false" />
+        <activity
             android:name=".VideoPlayerActivity"
-            android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
             android:screenOrientation="fullSensor"
             tools:ignore="DiscouragedApi" />
-
-
-
-
         <activity
             android:name=".FullImageActivity"
             android:exported="false" />
@@ -52,10 +57,8 @@
             android:exported="false" />
         <activity
             android:name=".UserProfileActivity"
-
-            android:windowSoftInputMode="adjustNothing"
-
-            android:exported="false" />
+            android:exported="false"
+            android:windowSoftInputMode="adjustNothing" />
         <activity
             android:name=".LoginActivity"
             android:exported="true"
@@ -66,9 +69,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-
-
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -83,19 +83,18 @@
             android:theme="@style/Theme.MyTelegram" /> <!-- Chat Activities -->
         <activity
             android:name=".ChatActivity"
-
-            android:windowSoftInputMode="adjustPan|stateHidden"
-            android:theme="@style/Theme.MyTelegram.NoActionBar" />
+            android:theme="@style/Theme.MyTelegram.NoActionBar"
+            android:windowSoftInputMode="adjustPan|stateHidden" />
         <activity
             android:name=".ChouseContactActivity"
-            android:windowSoftInputMode="adjustPan|stateHidden"
             android:exported="false"
-            android:theme="@style/Theme.MyTelegram.NoActionBar" /> <!-- Profile Activity -->
+            android:theme="@style/Theme.MyTelegram.NoActionBar"
+            android:windowSoftInputMode="adjustPan|stateHidden" /> <!-- Profile Activity -->
         <activity
             android:name=".ProfileActivity"
-            android:windowSoftInputMode="adjustPan|stateHidden"
             android:exported="false"
-            android:theme="@style/Theme.MyTelegram.NoActionBar" /> <!-- FileProvider для камеры и обмена файлами -->
+            android:theme="@style/Theme.MyTelegram.NoActionBar"
+            android:windowSoftInputMode="adjustPan|stateHidden" /> <!-- FileProvider для камеры и обмена файлами -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

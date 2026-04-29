@@ -1,72 +1,104 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:padding="16dp"
-    android:background="?android:attr/selectableItemBackground">
+    android:padding="12dp"
+    android:gravity="center_vertical"
+    android:background="?attr/selectableItemBackground">
 
-    <!-- Аватар пользователя -->
-    <ImageView
-        android:id="@+id/imageViewAvatar"
-        android:layout_width="50dp"
-        android:layout_height="50dp"
-        android:src="@drawable/ic_person"
-        android:layout_marginEnd="16dp" />
+    <!-- Аватар с иконкой группы -->
+    <FrameLayout
+        android:layout_width="56dp"
+        android:layout_height="56dp">
 
+        <ImageView
+            android:id="@+id/imageViewAvatar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:src="@drawable/ic_person"
+            android:scaleType="centerCrop"
+            android:clipToOutline="true"
+            android:outlineProvider="background"
+            android:background="@drawable/ic_person" />
+
+        <!-- Иконка группы (показывается только для групповых чатов) -->
+        <ImageView
+            android:id="@+id/groupIcon"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_gravity="bottom|end"
+            android:src="@drawable/circle_background"
+            android:visibility="gone"
+            android:background="@drawable/circle_background"
+            android:padding="2dp" />
+    </FrameLayout>
+
+    <!-- Информация о чате -->
     <LinearLayout
         android:layout_width="0dp"
-        android:layout_height="51dp"
-        android:layout_weight="2"
-        android:orientation="vertical">
-
-        <!-- Имя пользователя -->
-        <TextView
-            android:id="@+id/textViewUserName"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Имя пользователя"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
-        <!-- Последнее сообщение -->
-        <TextView
-            android:id="@+id/textViewLastMessage"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Последнее сообщение"
-            android:textColor="#666"
-            android:textSize="14sp" />
-
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_weight="1"
         android:orientation="vertical"
-        android:gravity="end">
+        android:layout_marginStart="12dp">
 
-        <!-- Время -->
-        <TextView
-            android:id="@+id/textViewTime"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="12:30"
-            android:textSize="12sp"
-            android:textColor="#999" />
+            android:orientation="horizontal">
 
-        <!-- Счетчик непрочитанных -->
-        <TextView
-            android:id="@+id/textViewUnreadCount"
-            android:layout_width="20dp"
-            android:layout_height="20dp"
-            android:gravity="center"
-            android:textColor="@android:color/white"
-            android:background="@drawable/circle_background"
-            android:textSize="12sp"
-            android:layout_marginTop="4dp"
-            android:visibility="gone" />
+            <TextView
+                android:id="@+id/textViewUserName"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Имя"
+                android:textColor="@color/black"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
+            <TextView
+                android:id="@+id/textViewTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="12:00"
+                android:textColor="@color/gray"
+                android:textSize="12sp"
+                android:layout_marginStart="8dp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp">
+
+            <TextView
+                android:id="@+id/textViewLastMessage"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Последнее сообщение"
+                android:textColor="@color/gray"
+                android:textSize="14sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/textViewUnreadCount"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:gravity="center"
+                android:text="1"
+                android:textColor="@color/white"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:background="@drawable/circle_background"
+                android:visibility="gone"
+                android:layout_marginStart="8dp" />
+        </LinearLayout>
     </LinearLayout>
-
 </LinearLayout>

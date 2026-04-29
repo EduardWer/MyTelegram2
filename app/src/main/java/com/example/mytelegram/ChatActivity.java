@@ -168,6 +168,8 @@ public class ChatActivity extends AppCompatActivity {
         loadMessages();
     }
 
+
+
     private void getIntentData() {
         Intent intent = getIntent();
         chatId = intent.getStringExtra("chatId");
@@ -436,47 +438,47 @@ public class ChatActivity extends AppCompatActivity {
 
 
     private void updateEditedMessage() {
-    if (editingMessageId == null || editingMessage == null) {
-        return;
-    }
+        if (editingMessageId == null || editingMessage == null) {
+            return;
+        }
 
-    String newText = messageEditText.getText().toString().trim();
+        String newText = messageEditText.getText().toString().trim();
 
-    if (TextUtils.isEmpty(newText)) {
-        Toast.makeText(ChatActivity.this, "Сообщение не может быть пустым", Toast.LENGTH_SHORT).show();
-        return;
-    }
+        if (TextUtils.isEmpty(newText)) {
+            Toast.makeText(ChatActivity.this, "Сообщение не может быть пустым", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-    if (newText.equals(editingMessage.getText())) {
-        // Текст не изменился - просто выходим из режима редактирования
-        cancelEditing();
-        return;
-    }
+        if (newText.equals(editingMessage.getText())) {
+            // Текст не изменился - просто выходим из режима редактирования
+            cancelEditing();
+            return;
+        }
 
-    // Показываем прогресс
-    showLoading(true);
+        // Показываем прогресс
+        showLoading(true);
 
-    Map<String, Object> updates = new HashMap<>();
-    updates.put("text", newText);
-    updates.put("edited", true);
-    updates.put("editedAt", ServerValue.TIMESTAMP);
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("text", newText);
+        updates.put("edited", true);
+        updates.put("editedAt", ServerValue.TIMESTAMP);
 
-    chatRef.child(editingMessageId).updateChildren(updates)
-            .addOnSuccessListener(aVoid -> {
-                runOnUiThread(() -> {
-                    showLoading(false);
-                    Toast.makeText(ChatActivity.this, "Сообщение изменено", Toast.LENGTH_SHORT).show();
-                    cancelEditing();
+        chatRef.child(editingMessageId).updateChildren(updates)
+                .addOnSuccessListener(aVoid -> {
+                    runOnUiThread(() -> {
+                        showLoading(false);
+                        Toast.makeText(ChatActivity.this, "Сообщение изменено", Toast.LENGTH_SHORT).show();
+                        cancelEditing();
+                    });
+                })
+                .addOnFailureListener(e -> {
+                    runOnUiThread(() -> {
+                        showLoading(false);
+                        Log.e(TAG, "Ошибка изменения сообщения: " + e.getMessage());
+                        Toast.makeText(ChatActivity.this, "Ошибка изменения сообщения", Toast.LENGTH_SHORT).show();
+                    });
                 });
-            })
-            .addOnFailureListener(e -> {
-                runOnUiThread(() -> {
-                    showLoading(false);
-                    Log.e(TAG, "Ошибка изменения сообщения: " + e.getMessage());
-                    Toast.makeText(ChatActivity.this, "Ошибка изменения сообщения", Toast.LENGTH_SHORT).show();
-                });
-            });
-}
+    }
 
     private void cancelEditing() {
         editingMessageId = null;
@@ -2378,6 +2380,12 @@ public class ChatActivity extends AppCompatActivity {
                     }
                 });
             }
+
+            // В ChatActivity, в методе markMessagesAsRead() или onStart()
+
+
+
+
 
             private void setupDocumentClick(Message message) {
                 messageLayout.setOnClickListener(v -> {

@@ -1,4 +1,3 @@
-
 package com.example.mytelegram;
 
 import android.view.LayoutInflater;
@@ -26,6 +25,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
     private List<Chat> chatList;
     private final OnChatClickListener onChatClickListener;
     private DatabaseReference usersRef;
+    private DatabaseReference groupsRef;
 
     public interface OnChatClickListener {
         void onChatClick(Chat chat);
@@ -35,6 +35,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
         this.chatList = chatList;
         this.onChatClickListener = listener;
         this.usersRef = FirebaseDatabase.getInstance().getReference().child("users");
+        this.groupsRef = FirebaseDatabase.getInstance().getReference().child("groups");
     }
 
     @NonNull
@@ -54,10 +55,6 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
             onChatClickListener.onChatClick(chat);
         });
     }
-
-
-
-
 
     @Override
     public int getItemCount() {
@@ -79,6 +76,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
         private TextView textViewTime;
         private TextView textViewUnreadCount;
         private ImageView imageViewAvatar;
+        private ImageView groupIcon;
 
         public ChatViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -87,27 +85,85 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
             textViewTime = itemView.findViewById(R.id.textViewTime);
             textViewUnreadCount = itemView.findViewById(R.id.textViewUnreadCount);
             imageViewAvatar = itemView.findViewById(R.id.imageViewAvatar);
+            groupIcon = itemView.findViewById(R.id.groupIcon);
         }
 
         public void bind(Chat chat) {
             // Устанавливаем базовую информацию
-            textViewLastMessage.setText(chat.getLastMessage());
+            String lastMessage = chat.getLastMessage();
+            textViewLastMessage.setText(lastMessage != null ? lastMessage : "");
             textViewTime.setText(formatTime(chat.getTimestamp()));
 
             // Счетчик непрочитанных
-            if (chat.getUnreadCount() > 0) {
+            int unreadCount = chat.getUnreadCount();
+            if (unreadCount > 0) {
                 textViewUnreadCount.setVisibility(View.VISIBLE);
-                textViewUnreadCount.setText(String.valueOf(chat.getUnreadCount()));
+                textViewUnreadCount.setText(String.valueOf(unreadCount));
             } else {
                 textViewUnreadCount.setVisibility(View.GONE);
             }
 
-            // Загружаем информацию о пользователе
-            loadUserInfo(chat.getParticipantId());
+            // Проверяем тип чата и загружаем соответствующую информацию
+            String chatType = chat.getChatType();
+
+            if ("group".equals(chatType)) {
+                // Групповой чат
+                if (groupIcon != null) {
+                    groupIcon.setVisibility(View.VISIBLE);
+                }
+                loadGroupInfo(chat.getGroupId());
+            } else {
+                // Личный чат
+                if (groupIcon != null) {
+                    groupIcon.setVisibility(View.GONE);
+                }
+                loadUserInfo(chat.getParticipantId());
+            }
+        }
+
+        private void loadGroupInfo(String groupId) {
+            if (groupId == null || groupId.isEmpty()) {
+                setDefaultGroupInfo();
+                return;
+            }
+
+            groupsRef.child(groupId).addListenerForSingleValueEvent(new ValueEventListener() {
+                @Override
+                public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                    if (dataSnapshot.exists()) {
+                        // Название группы
+                        String groupName = dataSnapshot.child("name").getValue(String.class);
+                        if (groupName == null) {
+                            groupName = "Группа";
+                        }
+                        textViewUserName.setText(groupName);
+
+                        // Аватар группы
+                        String avatarUrl = dataSnapshot.child("avatarUrl").getValue(String.class);
+                        if (avatarUrl != null && !avatarUrl.isEmpty()) {
+                            Glide.with(itemView.getContext())
+                                    .load(avatarUrl)
+                                    .placeholder(R.drawable.ic_person)
+                                    .error(R.drawable.ic_person)
+                                    .circleCrop()
+                                    .into(imageViewAvatar);
+                        } else {
+                            imageViewAvatar.setImageResource(R.drawable.ic_person);
+                        }
+                    } else {
+                        setDefaultGroupInfo();
+                    }
+                }
+
+                @Override
+                public void onCancelled(@NonNull DatabaseError databaseError) {
+                    setDefaultGroupInfo();
+                }
+            });
         }
 
         private void loadUserInfo(String userId) {
-            if (userId == null) {
+            if (userId == null || userId.isEmpty()) {
                 setDefaultUserInfo();
                 return;
             }
@@ -124,12 +180,10 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
                         if (userName == null) {
                             userName = "Пользователь";
                         }
-
                         textViewUserName.setText(userName);
 
                         // Загружаем аватар
                         loadUserAvatar(userId);
-
                     } else {
                         setDefaultUserInfo();
                     }
@@ -143,7 +197,6 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
         }
 
         private void loadUserAvatar(String userId) {
-            // Загружаем аватар из узла avatars
             DatabaseReference avatarRef = FirebaseDatabase.getInstance()
                     .getReference("avatars")
                     .child(userId);
@@ -154,7 +207,6 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
                     if (dataSnapshot.exists()) {
                         String avatarUrl = dataSnapshot.getValue(String.class);
                         if (avatarUrl != null && !avatarUrl.isEmpty()) {
-                            // Загружаем аватар с помощью Glide
                             Glide.with(itemView.getContext())
                                     .load(avatarUrl)
                                     .placeholder(R.drawable.ic_person)
@@ -181,12 +233,20 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
             setDefaultAvatar();
         }
 
+        private void setDefaultGroupInfo() {
+            textViewUserName.setText("Группа");
+            imageViewAvatar.setImageResource(R.drawable.ic_person);
+        }
+
         private void setDefaultAvatar() {
             imageViewAvatar.setImageResource(R.drawable.ic_person);
         }
 
         private String formatTime(long timestamp) {
             try {
+                if (timestamp <= 0) {
+                    return "";
+                }
                 SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
                 return sdf.format(new Date(timestamp));
             } catch (Exception e) {

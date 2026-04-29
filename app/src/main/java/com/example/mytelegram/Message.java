@@ -130,6 +130,13 @@ public class Message implements Comparable<Message> {
         updateReadStatus();
     }
 
+    private String senderName;
+
+    public String getSenderName() { return senderName; }
+    public void setSenderName(String senderName) { this.senderName = senderName; }
+
+
+
     private void updateReadStatus() {
         if (readBy != null && !readBy.isEmpty()) {
             // Логика для определения, прочитано ли сообщение всеми участниками
