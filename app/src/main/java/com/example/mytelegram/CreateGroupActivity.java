@@ -53,14 +53,15 @@ public class CreateGroupActivity extends AppCompatActivity {
     private RecyclerView usersRecyclerView;
     private ProgressBar progressBar;
     private Button createButton;
-    private EditText searchEditText;                     // поле поиска
+    private EditText searchEditText;
 
     private FirebaseUser currentUser;
-    private List<UserModel> allUsers;                    // все загруженные пользователи
-    private List<UserModel> filteredUsers;               // отфильтрованный список для адаптера
+    private List<UserModel> allUsers;
+    private List<UserModel> filteredUsers;
     private UserSelectionAdapter adapter;
 
     private Uri selectedAvatarUri;
+    private String adminDomain; // Домен администратора
 
     // Firebase
     private DatabaseReference usersRef;
@@ -75,9 +76,9 @@ public class CreateGroupActivity extends AppCompatActivity {
 
         initFirebase();
         initViews();
-        loadUsers();
+        loadAdminDomain(); // Загружаем домен админа первым
         setupClickListeners();
-        setupSearch();                    // настройка поиска
+        setupSearch();
     }
 
     private void initFirebase() {
@@ -100,13 +101,43 @@ public class CreateGroupActivity extends AppCompatActivity {
         usersRecyclerView = findViewById(R.id.usersRecyclerView);
         progressBar = findViewById(R.id.progressBar);
         createButton = findViewById(R.id.createButton);
-        searchEditText = findViewById(R.id.searchUsersEditText);   // важно! должно совпадать с XML
+        searchEditText = findViewById(R.id.searchUsersEditText);
 
         allUsers = new ArrayList<>();
-        filteredUsers = new ArrayList<>();   // <-- ИНИЦИАЛИЗАЦИЯ! Без этого был NPE
+        filteredUsers = new ArrayList<>();
         adapter = new UserSelectionAdapter(filteredUsers, currentUser.getUid());
         usersRecyclerView.setLayoutManager(new LinearLayoutManager(this));
         usersRecyclerView.setAdapter(adapter);
+    }
+
+    // Загрузка домена администратора
+    private void loadAdminDomain() {
+        progressBar.setVisibility(View.VISIBLE);
+
+        DatabaseReference currentUserRef = FirebaseDatabase.getInstance()
+                .getReference("users").child(currentUser.getUid());
+
+        currentUserRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (snapshot.exists()) {
+                    String email = snapshot.child("email").getValue(String.class);
+                    if (email != null && email.contains("@")) {
+                        adminDomain = email.substring(email.indexOf("@") + 1).toLowerCase();
+                        Log.d(TAG, "Admin domain: " + adminDomain);
+                    }
+                }
+                // После загрузки домена загружаем пользователей
+                loadUsers();
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                progressBar.setVisibility(View.GONE);
+                // При ошибке загружаем всех пользователей
+                loadUsers();
+            }
+        });
     }
 
     private void setupSearch() {
@@ -138,21 +169,43 @@ public class CreateGroupActivity extends AppCompatActivity {
 
     private void loadUsers() {
         progressBar.setVisibility(View.VISIBLE);
+
         usersRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 allUsers.clear();
+
                 for (DataSnapshot userSnap : snapshot.getChildren()) {
                     UserModel user = userSnap.getValue(UserModel.class);
                     if (user != null && !user.getUid().equals(currentUser.getUid())) {
-                        user.setUid(userSnap.getKey()); // uid может быть ключом
+                        user.setUid(userSnap.getKey());
+
+                        // Проверяем домен пользователя
+                        String userEmail = user.getEmail();
+                        if (userEmail != null && userEmail.contains("@")) {
+                            String userDomain = userEmail.substring(userEmail.indexOf("@") + 1).toLowerCase();
+                            user.setDomain(userDomain);
+
+                            // Фильтруем по домену (если домен админа известен)
+                            if (!TextUtils.isEmpty(adminDomain)) {
+                                if (!adminDomain.equals(userDomain)) {
+                                    continue; // Пропускаем пользователей с другим доменом
+                                }
+                            }
+                        } else if (!TextUtils.isEmpty(adminDomain)) {
+                            // Если домен админа известен, но у пользователя нет email - пропускаем
+                            continue;
+                        }
+
                         allUsers.add(user);
-                        // 🔽 Загружаем аватар отдельно
                         loadAvatarForUser(user);
                     }
                 }
-                filterUsers(""); // показать всех после загрузки
+
+                filterUsers(""); // Показать всех после загрузки
                 progressBar.setVisibility(View.GONE);
+
+                Log.d(TAG, "Loaded " + allUsers.size() + " users (domain filter: " + adminDomain + ")");
             }
 
             @Override
@@ -172,7 +225,6 @@ public class CreateGroupActivity extends AppCompatActivity {
                         String avatarUrl = snapshot.getValue(String.class);
                         if (avatarUrl != null) {
                             user.setAvatarUrl(avatarUrl);
-                            // Найти позицию пользователя в filteredUsers и обновить элемент
                             int pos = findUserPosition(user.getUid());
                             if (pos >= 0) {
                                 adapter.notifyItemChanged(pos);
@@ -181,13 +233,10 @@ public class CreateGroupActivity extends AppCompatActivity {
                     }
 
                     @Override
-                    public void onCancelled(@NonNull DatabaseError error) {
-                        // если ошибка – просто оставляем без аватара
-                    }
+                    public void onCancelled(@NonNull DatabaseError error) {}
                 });
     }
 
-    // Вспомогательный метод поиска индекса пользователя в отфильтрованном списке
     private int findUserPosition(String uid) {
         for (int i = 0; i < filteredUsers.size(); i++) {
             if (filteredUsers.get(i).getUid().equals(uid)) {
@@ -249,6 +298,11 @@ public class CreateGroupActivity extends AppCompatActivity {
         groupData.put("createdAt", System.currentTimeMillis());
         groupData.put("chatId", chatId);
 
+        // Сохраняем домен группы (для проверки при добавлении новых участников)
+        if (!TextUtils.isEmpty(adminDomain)) {
+            groupData.put("domain", adminDomain);
+        }
+
         Map<String, Boolean> members = new HashMap<>();
         for (String uid : selectedUsers) {
             members.put(uid, true);
@@ -274,6 +328,11 @@ public class CreateGroupActivity extends AppCompatActivity {
         userChatEntry.put("lastMessageSenderId", currentUser.getUid());
         userChatEntry.put("messageType", "system");
 
+        // Добавляем домен в userChatEntry
+        if (!TextUtils.isEmpty(adminDomain)) {
+            userChatEntry.put("domain", adminDomain);
+        }
+
         Map<String, Object> updates = new HashMap<>();
         updates.put("groups/" + groupId, groupData);
         updates.put("chats/" + chatId, chatData);
@@ -286,12 +345,10 @@ public class CreateGroupActivity extends AppCompatActivity {
                     progressBar.setVisibility(View.GONE);
                     createButton.setEnabled(true);
                     if (task.isSuccessful()) {
-                        // Если выбран аватар, загружаем его и обновляем URL
                         if (selectedAvatarUri != null) {
                             uploadGroupAvatar(groupId, selectedAvatarUri);
                         }
                         Toast.makeText(CreateGroupActivity.this, "Группа создана!", Toast.LENGTH_SHORT).show();
-                        // Открываем групповой чат
                         Intent intent = new Intent(CreateGroupActivity.this, GroupChatActivity.class);
                         intent.putExtra("chatId", chatId);
                         intent.putExtra("groupId", groupId);
@@ -305,7 +362,6 @@ public class CreateGroupActivity extends AppCompatActivity {
                 });
     }
 
-    // --- Загрузка аватара группы (аналогично другим файлам) ---
     private void uploadGroupAvatar(String groupId, Uri avatarUri) {
         if (groupId == null || avatarUri == null) {
             Toast.makeText(this, "Нет данных для загрузки", Toast.LENGTH_SHORT).show();
@@ -331,7 +387,6 @@ public class CreateGroupActivity extends AppCompatActivity {
             public void onSuccess(String fileUrl) {
                 runOnUiThread(() -> {
                     if (tempFile.exists()) tempFile.delete();
-                    // Сохраняем URL аватара в Firebase
                     FirebaseDatabase.getInstance().getReference()
                             .child("groups").child(groupId).child("avatarUrl")
                             .setValue(fileUrl)

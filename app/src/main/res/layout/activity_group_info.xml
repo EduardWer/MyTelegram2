@@ -35,14 +35,7 @@
             android:textColor="#333333"
             android:layout_marginBottom="4dp" />
 
-        <TextView
-            android:id="@+id/groupDescription"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Описание группы"
-            android:textSize="14sp"
-            android:textColor="#666666"
-            android:layout_marginBottom="8dp" />
+
 
         <TextView
             android:id="@+id/groupMembersCount"

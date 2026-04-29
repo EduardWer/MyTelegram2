@@ -58,6 +58,7 @@ public class GroupInfoActivity extends AppCompatActivity {
     private RecyclerView membersRecyclerView;
     private ProgressBar progressBar;
     private Button leaveGroupButton;
+    private Set<String> removedMemberIds; // Пользователи, которые были удалены из группы
     private Button addMemberButton;
 
     private MembersAdapter membersAdapter;
@@ -70,20 +71,24 @@ public class GroupInfoActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_group_info);
 
+        // Инициализация ДО загрузки данных
+        existingMemberIds = new ArrayList<>();
+        removedMemberIds = new HashSet<>(); // ← ОБЯЗАТЕЛЬНО здесь
+
         groupId = getIntent().getStringExtra("groupId");
         chatId = getIntent().getStringExtra("chatId");
         currentUserId = FirebaseAuth.getInstance().getCurrentUser().getUid();
-        existingMemberIds = new ArrayList<>();
 
         initViews();
         loadGroupInfo();
         loadMembers();
+        loadRemovedMembers(); // Теперь removedMemberIds точно не null
     }
 
     private void initViews() {
         groupAvatar = findViewById(R.id.groupAvatar);
         groupName = findViewById(R.id.groupName);
-        groupDescription = findViewById(R.id.groupDescription);
+
         groupMembersCount = findViewById(R.id.groupMembersCount);
         memberCountBadge = findViewById(R.id.memberCountBadge);
         membersRecyclerView = findViewById(R.id.membersRecyclerView);
@@ -98,6 +103,47 @@ public class GroupInfoActivity extends AppCompatActivity {
 
         leaveGroupButton.setOnClickListener(v -> leaveGroup());
         addMemberButton.setOnClickListener(v -> showAddMembersDialog());
+    }
+
+
+    // Загрузка истории удаленных пользователей
+    private void loadRemovedMembers() {
+        // Теперь removedMemberIds загружаются в loadMembers()
+        // Этот метод можно удалить или оставить пустым
+
+        // Проверяем userChats для дополнительного поиска удаленных
+        DatabaseReference userChatsRef = FirebaseDatabase.getInstance().getReference("userChats");
+
+        userChatsRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (removedMemberIds == null) {
+                    removedMemberIds = new HashSet<>();
+                }
+
+                for (DataSnapshot userSnap : snapshot.getChildren()) {
+                    String userId = userSnap.getKey();
+                    if (userId == null) continue;
+
+                    // Проверяем, есть ли у пользователя запись этого чата
+                    DataSnapshot chatSnap = userSnap.child(chatId);
+                    if (chatSnap.exists()) {
+                        // Пользователь был в группе, но сейчас не в activeMembers
+                        if (existingMemberIds != null && !existingMemberIds.contains(userId)
+                                && !userId.equals(currentUserId)) {
+                            removedMemberIds.add(userId);
+                        }
+                    }
+                }
+
+                Log.d(TAG, "Total removed members: " + removedMemberIds.size());
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "Error loading removed members: " + error.getMessage());
+            }
+        });
     }
 
     private void loadGroupInfo() {
@@ -195,24 +241,38 @@ public class GroupInfoActivity extends AppCompatActivity {
                 membersList.clear();
                 existingMemberIds.clear();
 
+                if (removedMemberIds == null) {
+                    removedMemberIds = new HashSet<>();
+                }
+                removedMemberIds.clear();
+
                 for (DataSnapshot memberSnap : snapshot.getChildren()) {
                     String memberId = memberSnap.getKey();
                     Boolean isMember = memberSnap.getValue(Boolean.class);
 
-                    if (memberId != null && isMember != null && isMember) {
-                        existingMemberIds.add(memberId);
+                    if (memberId != null) {
+                        if (isMember != null && isMember) {
+                            // Активный участник
+                            existingMemberIds.add(memberId);
 
-                        MemberModel member = new MemberModel();
-                        member.setUid(memberId);
-                        member.setRole(memberId.equals(createdBy) ? "Администратор" : "Участник");
-                        membersList.add(member);
+                            MemberModel member = new MemberModel();
+                            member.setUid(memberId);
+                            member.setRole(memberId.equals(createdBy) ? "Администратор" : "Участник");
+                            membersList.add(member);
 
-                        loadUserInfo(memberId, member);
+                            loadUserInfo(memberId, member);
+                        } else if (isMember != null && !isMember) {
+                            // Удаленный участник (false)
+                            removedMemberIds.add(memberId);
+                            Log.d(TAG, "Found removed member in group: " + memberId);
+                        }
                     }
                 }
 
                 updateMemberCount();
                 membersAdapter.notifyDataSetChanged();
+
+                Log.d(TAG, "Active members: " + existingMemberIds.size() + ", Removed: " + removedMemberIds.size());
             }
 
             @Override
@@ -339,14 +399,19 @@ public class GroupInfoActivity extends AppCompatActivity {
 
         List<UserModel> allUsers = new ArrayList<>();
         List<UserModel> filteredUsers = new ArrayList<>();
-        Map<String, String> userDomains = new HashMap<>(); // Кэш доменов
+        Map<String, String> userDomains = new HashMap<>();
 
-        AddMembersAdapter addAdapter = new AddMembersAdapter(filteredUsers, existingMemberIds, currentUserId, adminDomain, userDomains);
+        // Передаем removedMemberIds в адаптер
+        Set<String> removedIds = removedMemberIds != null ? new HashSet<>(removedMemberIds) : new HashSet<>();
+        AddMembersAdapter addAdapter = new AddMembersAdapter(
+                filteredUsers, existingMemberIds, removedIds,
+                currentUserId, adminDomain, userDomains
+        );
 
         addUsersRecyclerView.setLayoutManager(new LinearLayoutManager(this));
         addUsersRecyclerView.setAdapter(addAdapter);
 
-        // Загружаем всех пользователей
+        // ===== ЗАГРУЖАЕМ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ =====
         DatabaseReference usersRef = FirebaseDatabase.getInstance().getReference("users");
         usersRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
@@ -372,13 +437,17 @@ public class GroupInfoActivity extends AppCompatActivity {
                 // Применяем фильтр по домену
                 filterUsersByDomain(allUsers, filteredUsers, userDomains);
                 addAdapter.notifyDataSetChanged();
+
+                Log.d(TAG, "Loaded " + allUsers.size() + " users, filtered: " + filteredUsers.size());
             }
 
             @Override
-            public void onCancelled(@NonNull DatabaseError error) {}
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "Error loading users: " + error.getMessage());
+            }
         });
 
-        // Поиск
+        // ===== ПОИСК =====
         searchEditText.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
@@ -386,7 +455,7 @@ public class GroupInfoActivity extends AppCompatActivity {
             @Override
             public void afterTextChanged(Editable s) {
                 filteredUsers.clear();
-                String query = s.toString().toLowerCase();
+                String query = s.toString().toLowerCase().trim();
 
                 List<UserModel> sourceList = new ArrayList<>();
                 filterUsersByDomain(allUsers, sourceList, userDomains);
@@ -395,16 +464,19 @@ public class GroupInfoActivity extends AppCompatActivity {
                     filteredUsers.addAll(sourceList);
                 } else {
                     for (UserModel user : sourceList) {
-                        if (user.getUsername() != null && user.getUsername().toLowerCase().contains(query)) {
+                        String name = user.getUsername() != null ? user.getUsername().toLowerCase() : "";
+                        String email = user.getEmail() != null ? user.getEmail().toLowerCase() : "";
+                        if (name.contains(query) || email.contains(query)) {
                             filteredUsers.add(user);
                         }
                     }
                 }
                 addAdapter.notifyDataSetChanged();
+                Log.d(TAG, "Search query: '" + query + "', results: " + filteredUsers.size());
             }
         });
 
-        // Кнопка подтверждения
+        // ===== КНОПКА ПОДТВЕРЖДЕНИЯ =====
         confirmAddButton.setOnClickListener(v -> {
             List<String> selectedIds = addAdapter.getSelectedUserIds();
             if (selectedIds.isEmpty()) {
@@ -491,16 +563,22 @@ public class GroupInfoActivity extends AppCompatActivity {
         String groupTitle = groupName.getText().toString();
 
         for (String uid : newMemberIds) {
-            // Добавляем в группу
+            // Проверяем, был ли пользователь удален ранее
+            boolean wasRemoved = removedMemberIds != null && removedMemberIds.contains(uid);
+            String statusMessage = wasRemoved ?
+                    "♻️ Пользователь возвращён в группу" :
+                    "👤 Новый участник добавлен в группу";
+
+            // Устанавливаем true (даже если было false)
             updates.put("groups/" + groupId + "/members/" + uid, true);
 
-            // Добавляем чат пользователю
+            // Добавляем/обновляем чат пользователю
             Map<String, Object> chatEntry = new HashMap<>();
             chatEntry.put("chatId", chatId);
             chatEntry.put("chatType", "group");
             chatEntry.put("groupId", groupId);
             chatEntry.put("groupName", groupTitle);
-            chatEntry.put("lastMessage", "👤 Добавлен в группу");
+            chatEntry.put("lastMessage", statusMessage);
             chatEntry.put("timestamp", timestamp);
             chatEntry.put("unreadCount", 1);
             chatEntry.put("lastMessageSenderId", currentUserId);
@@ -514,7 +592,7 @@ public class GroupInfoActivity extends AppCompatActivity {
             if (msgId != null) {
                 Map<String, Object> sysMsg = new HashMap<>();
                 sysMsg.put("id", msgId);
-                sysMsg.put("text", "👤 Новый участник добавлен в группу");
+                sysMsg.put("text", statusMessage);
                 sysMsg.put("senderId", "system");
                 sysMsg.put("timestamp", timestamp);
                 sysMsg.put("chatId", chatId);
@@ -524,13 +602,19 @@ public class GroupInfoActivity extends AppCompatActivity {
                 sysMsg.put("edited", false);
                 updates.put("chats/" + chatId + "/messages/" + msgId, sysMsg);
             }
+
+            // Удаляем из списка удаленных
+            if (removedMemberIds != null) {
+                removedMemberIds.remove(uid);
+            }
         }
 
         FirebaseDatabase.getInstance().getReference().updateChildren(updates)
                 .addOnSuccessListener(aVoid -> {
                     progressBar.setVisibility(View.GONE);
-                    Toast.makeText(this, "Добавлено участников: " + newMemberIds.size(), Toast.LENGTH_SHORT).show();
-                    loadMembers();
+                    String msg = "Добавлено участников: " + newMemberIds.size();
+                    Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+                    loadMembers(); // Обновит списки
                 })
                 .addOnFailureListener(e -> {
                     progressBar.setVisibility(View.GONE);
@@ -562,6 +646,7 @@ public class GroupInfoActivity extends AppCompatActivity {
         progressBar.setVisibility(View.VISIBLE);
 
         Map<String, Object> updates = new HashMap<>();
+        // Ставим false вместо удаления
         updates.put("groups/" + groupId + "/members/" + currentUserId, false);
         updates.put("userChats/" + currentUserId + "/" + chatId, null);
 
@@ -623,13 +708,19 @@ public class GroupInfoActivity extends AppCompatActivity {
                     progressBar.setVisibility(View.VISIBLE);
 
                     Map<String, Object> updates = new HashMap<>();
+                    // Ставим false вместо удаления записи
                     updates.put("groups/" + groupId + "/members/" + memberId, false);
+                    // Удаляем чат
                     updates.put("userChats/" + memberId + "/" + chatId, null);
 
                     FirebaseDatabase.getInstance().getReference().updateChildren(updates)
                             .addOnSuccessListener(aVoid -> {
                                 progressBar.setVisibility(View.GONE);
                                 Toast.makeText(this, "Участник удален", Toast.LENGTH_SHORT).show();
+                                // Добавляем в removedIds
+                                if (removedMemberIds != null) {
+                                    removedMemberIds.add(memberId);
+                                }
                             })
                             .addOnFailureListener(e -> {
                                 progressBar.setVisibility(View.GONE);
@@ -720,16 +811,19 @@ public class GroupInfoActivity extends AppCompatActivity {
         private List<UserModel> users;
         private Set<String> selectedIds;
         private Set<String> existingIds;
+        private Set<String> removedIds; // Удаленные ранее пользователи
         private String currentUserId;
         private String adminDomain;
         private Map<String, String> userDomains;
 
         public AddMembersAdapter(List<UserModel> users, List<String> existingIds,
+                                 Set<String> removedIds,
                                  String currentUserId, String adminDomain,
                                  Map<String, String> userDomains) {
             this.users = users;
             this.selectedIds = new HashSet<>();
             this.existingIds = new HashSet<>(existingIds);
+            this.removedIds = removedIds != null ? removedIds : new HashSet<>();
             this.currentUserId = currentUserId;
             this.adminDomain = adminDomain;
             this.userDomains = userDomains;
@@ -751,6 +845,7 @@ public class GroupInfoActivity extends AppCompatActivity {
         public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
             UserModel user = users.get(position);
             boolean isExisting = existingIds.contains(user.getUid());
+            boolean isRemoved = removedIds != null && removedIds.contains(user.getUid());
             boolean isCurrentUser = user.getUid().equals(currentUserId);
 
             // Проверяем домен
@@ -768,15 +863,30 @@ public class GroupInfoActivity extends AppCompatActivity {
                 holder.statusText.setVisibility(View.GONE);
             }
 
+            // Сбрасываем слушатель чекбокса перед установкой
+            holder.checkBox.setOnCheckedChangeListener(null);
+
             if (isCurrentUser) {
+                // Текущий пользователь (админ)
                 holder.checkBox.setChecked(true);
                 holder.checkBox.setEnabled(false);
                 holder.nameText.setText(holder.nameText.getText() + " (вы)");
                 holder.statusText.setText("Администратор");
+                holder.itemView.setAlpha(1.0f);
             } else if (isExisting) {
+                // Уже в группе
                 holder.checkBox.setChecked(true);
                 holder.checkBox.setEnabled(false);
                 holder.nameText.setText(holder.nameText.getText() + " (в группе)");
+                holder.itemView.setAlpha(1.0f);
+            } else if (isRemoved) {
+                // Был удален - можно вернуть
+                holder.checkBox.setChecked(selectedIds.contains(user.getUid()));
+                holder.checkBox.setEnabled(true);
+                holder.nameText.setText(holder.nameText.getText() + " ♻️ (был удалён)");
+                holder.statusText.setText("Можно вернуть в группу");
+                holder.statusText.setVisibility(View.VISIBLE);
+                holder.itemView.setAlpha(1.0f);
             } else if (!sameDomain) {
                 // Другой домен - нельзя выбрать
                 holder.checkBox.setChecked(false);
@@ -784,27 +894,43 @@ public class GroupInfoActivity extends AppCompatActivity {
                 holder.nameText.setText(holder.nameText.getText() + " ⛔ другой домен");
                 holder.itemView.setAlpha(0.5f);
             } else {
+                // Новый пользователь - МОЖНО ВЫБРАТЬ
                 holder.checkBox.setChecked(selectedIds.contains(user.getUid()));
                 holder.checkBox.setEnabled(true);
                 holder.itemView.setAlpha(1.0f);
             }
 
+            // Устанавливаем слушатель чекбокса
+            holder.checkBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                String uid = user.getUid();
+                if (uid == null) return;
+
+                if (isChecked) {
+                    selectedIds.add(uid);
+                    Log.d(TAG, "CheckBox CHECKED: " + uid + " (" + user.getUsername() + ")");
+                } else {
+                    selectedIds.remove(uid);
+                    Log.d(TAG, "CheckBox UNCHECKED: " + uid + " (" + user.getUsername() + ")");
+                }
+            });
+
+            // Клик по элементу
             holder.itemView.setOnClickListener(v -> {
                 if (!isExisting && !isCurrentUser && sameDomain) {
                     String uid = user.getUid();
-                    if (selectedIds.contains(uid)) {
-                        selectedIds.remove(uid);
-                    } else {
-                        selectedIds.add(uid);
-                    }
-                    notifyItemChanged(position);
-                } else if (!sameDomain) {
+                    // Переключаем чекбокс
+                    holder.checkBox.setChecked(!holder.checkBox.isChecked());
+
+                    Log.d(TAG, "Item clicked: " + uid + " selected=" + holder.checkBox.isChecked());
+                } else if (!sameDomain && !isExisting) {
                     Toast.makeText(holder.itemView.getContext(),
                             "Можно добавить только пользователей с доменом @" + adminDomain,
                             Toast.LENGTH_SHORT).show();
                 }
             });
         }
+
+
 
         @Override
         public int getItemCount() {

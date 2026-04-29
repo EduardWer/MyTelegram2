@@ -6,6 +6,8 @@ public class UserModel {
 
     private String email;
     private String status;
+
+    private String domain;
     private String phone;
     private String avatarUrl;
 
@@ -40,5 +42,13 @@ public class UserModel {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public void setDomain(String domain) {
+        this.domain = domain;
+    }
+
+    public String getDomain() {
+        return domain;
     }
 }
