@@ -303,7 +303,7 @@ public class CreateGroupActivity extends AppCompatActivity {
             public void onError(String error) {
                 runOnUiThread(() -> {
                     if (tempFile.exists()) tempFile.delete();
-                    Log.e(TAG, "Ошибка загрузки аватара: " + error); // Исправлено: просто строка
+                    Log.e(TAG, "Ошибка загрузки аватара: " + error);
                     Toast.makeText(CreateGroupActivity.this, "Ошибка загрузки: " + error, Toast.LENGTH_LONG).show();
                 });
             }
