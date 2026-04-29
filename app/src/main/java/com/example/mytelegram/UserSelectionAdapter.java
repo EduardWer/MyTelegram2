@@ -43,33 +43,58 @@ public class UserSelectionAdapter extends RecyclerView.Adapter<UserSelectionAdap
         UserModel user = users.get(position);
 
         // Имя пользователя
-        holder.nameTextView.setText(
-                user.getUsername() != null ? user.getUsername() : "Пользователь"
-        );
-
-        // Чекбокс
-        holder.checkBox.setChecked(selectedIds.contains(user.getUid()));
-
-        // Аватар
-        if (!TextUtils.isEmpty(user.getAvatarUrl())) {
-            Glide.with(holder.itemView.getContext())
-                    .load(user.getAvatarUrl())
-                    .placeholder(R.drawable.ic_person)
-                    .circleCrop()
-                    .into(holder.avatarImageView);
-        } else {
-            holder.avatarImageView.setImageResource(R.drawable.ic_person);
+        if (holder.nameTextView != null) {
+            holder.nameTextView.setText(
+                    user.getUsername() != null ? user.getUsername() : "Пользователь"
+            );
         }
 
-        // Клик для выбора/снятия галочки
+
+        // Чекбокс
+        if (holder.checkBox != null) {
+            // Сбрасываем слушатель, чтобы избежать рекурсии
+            holder.checkBox.setOnCheckedChangeListener(null);
+            holder.checkBox.setChecked(selectedIds.contains(user.getUid()));
+
+            // Устанавливаем новый слушатель
+            holder.checkBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                String uid = user.getUid();
+                if (uid == null || uid.equals(currentUserId)) {
+                    // Не даем выбрать самого себя
+                    holder.checkBox.setChecked(false);
+                    return;
+                }
+
+                if (isChecked) {
+                    selectedIds.add(uid);
+                } else {
+                    selectedIds.remove(uid);
+                }
+            });
+        }
+
+        // Аватар
+        if (holder.avatarImageView != null) {
+            if (!TextUtils.isEmpty(user.getAvatarUrl())) {
+                Glide.with(holder.itemView.getContext())
+                        .load(user.getAvatarUrl())
+                        .placeholder(R.drawable.ic_person)
+                        .circleCrop()
+                        .into(holder.avatarImageView);
+            } else {
+                holder.avatarImageView.setImageResource(R.drawable.ic_person);
+            }
+        }
+
+        // Клик по всему элементу
         holder.itemView.setOnClickListener(v -> {
             String uid = user.getUid();
-            if (selectedIds.contains(uid)) {
-                selectedIds.remove(uid);
-            } else {
-                selectedIds.add(uid);
+            if (uid == null || uid.equals(currentUserId)) return;
+
+            if (holder.checkBox != null) {
+                // Переключаем чекбокс
+                holder.checkBox.setChecked(!holder.checkBox.isChecked());
             }
-            notifyItemChanged(position);
         });
     }
 
