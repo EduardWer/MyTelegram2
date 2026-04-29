@@ -3,7 +3,9 @@ package com.example.mytelegram;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.text.Editable;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -27,7 +29,6 @@ import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -42,6 +43,9 @@ public class CreateGroupActivity extends AppCompatActivity {
 
     private static final String TAG = "CreateGroupActivity";
     private static final int PICK_GROUP_AVATAR = 101;
+    private static final String BUCKET_NAME = "server21";
+    private static final String YANDEX_CLOUD_ACCESS_KEY = "YCAJETFSyLNjaaVZt_qSnMevC";
+    private static final String YANDEX_CLOUD_SECRET_KEY = "YCNfeBlLIjDPEhWRcWl14PYmQE9oOI6pXcePO6fu";
 
     private EditText groupNameEditText;
     private ImageView groupAvatarPreview;
@@ -49,12 +53,15 @@ public class CreateGroupActivity extends AppCompatActivity {
     private RecyclerView usersRecyclerView;
     private ProgressBar progressBar;
     private Button createButton;
+    private EditText searchEditText;                     // поле поиска
 
     private FirebaseUser currentUser;
-    private List<UserModel> allUsers;
+    private List<UserModel> allUsers;                    // все загруженные пользователи
+    private List<UserModel> filteredUsers;               // отфильтрованный список для адаптера
     private UserSelectionAdapter adapter;
 
     private Uri selectedAvatarUri;
+
     // Firebase
     private DatabaseReference usersRef;
     private DatabaseReference groupsRef;
@@ -70,6 +77,7 @@ public class CreateGroupActivity extends AppCompatActivity {
         initViews();
         loadUsers();
         setupClickListeners();
+        setupSearch();                    // настройка поиска
     }
 
     private void initFirebase() {
@@ -92,11 +100,40 @@ public class CreateGroupActivity extends AppCompatActivity {
         usersRecyclerView = findViewById(R.id.usersRecyclerView);
         progressBar = findViewById(R.id.progressBar);
         createButton = findViewById(R.id.createButton);
+        searchEditText = findViewById(R.id.searchUsersEditText);   // важно! должно совпадать с XML
 
         allUsers = new ArrayList<>();
-        adapter = new UserSelectionAdapter(allUsers, currentUser.getUid());
+        filteredUsers = new ArrayList<>();   // <-- ИНИЦИАЛИЗАЦИЯ! Без этого был NPE
+        adapter = new UserSelectionAdapter(filteredUsers, currentUser.getUid());
         usersRecyclerView.setLayoutManager(new LinearLayoutManager(this));
         usersRecyclerView.setAdapter(adapter);
+    }
+
+    private void setupSearch() {
+        searchEditText.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override
+            public void afterTextChanged(Editable s) {
+                filterUsers(s.toString());
+            }
+        });
+    }
+
+    private void filterUsers(String query) {
+        filteredUsers.clear();
+        if (TextUtils.isEmpty(query)) {
+            filteredUsers.addAll(allUsers);
+        } else {
+            String lowerQuery = query.toLowerCase();
+            for (UserModel user : allUsers) {
+                String name = user.getUsername() != null ? user.getUsername().toLowerCase() : "";
+                if (name.contains(lowerQuery)) {
+                    filteredUsers.add(user);
+                }
+            }
+        }
+        adapter.updateList(filteredUsers);
     }
 
     private void loadUsers() {
@@ -110,9 +147,11 @@ public class CreateGroupActivity extends AppCompatActivity {
                     if (user != null && !user.getUid().equals(currentUser.getUid())) {
                         user.setUid(userSnap.getKey()); // uid может быть ключом
                         allUsers.add(user);
+                        // 🔽 Загружаем аватар отдельно
+                        loadAvatarForUser(user);
                     }
                 }
-                adapter.notifyDataSetChanged();
+                filterUsers(""); // показать всех после загрузки
                 progressBar.setVisibility(View.GONE);
             }
 
@@ -122,6 +161,40 @@ public class CreateGroupActivity extends AppCompatActivity {
                 Toast.makeText(CreateGroupActivity.this, "Ошибка загрузки пользователей", Toast.LENGTH_SHORT).show();
             }
         });
+    }
+
+    private void loadAvatarForUser(UserModel user) {
+        FirebaseDatabase.getInstance().getReference("avatars")
+                .child(user.getUid())
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        String avatarUrl = snapshot.getValue(String.class);
+                        if (avatarUrl != null) {
+                            user.setAvatarUrl(avatarUrl);
+                            // Найти позицию пользователя в filteredUsers и обновить элемент
+                            int pos = findUserPosition(user.getUid());
+                            if (pos >= 0) {
+                                adapter.notifyItemChanged(pos);
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        // если ошибка – просто оставляем без аватара
+                    }
+                });
+    }
+
+    // Вспомогательный метод поиска индекса пользователя в отфильтрованном списке
+    private int findUserPosition(String uid) {
+        for (int i = 0; i < filteredUsers.size(); i++) {
+            if (filteredUsers.get(i).getUid().equals(uid)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private void setupClickListeners() {
@@ -159,7 +232,6 @@ public class CreateGroupActivity extends AppCompatActivity {
             return;
         }
 
-        // Обязательно добавляем текущего пользователя в группу
         if (!selectedUsers.contains(currentUser.getUid())) {
             selectedUsers.add(currentUser.getUid());
         }
@@ -167,11 +239,9 @@ public class CreateGroupActivity extends AppCompatActivity {
         progressBar.setVisibility(View.VISIBLE);
         createButton.setEnabled(false);
 
-        // 1. Генерируем уникальные ID для группы и чата
         String groupId = UUID.randomUUID().toString();
         String chatId = UUID.randomUUID().toString();
 
-        // 2. Создаём узел группы в /groups/{groupId}
         Map<String, Object> groupData = new HashMap<>();
         groupData.put("id", groupId);
         groupData.put("name", groupName);
@@ -179,18 +249,12 @@ public class CreateGroupActivity extends AppCompatActivity {
         groupData.put("createdAt", System.currentTimeMillis());
         groupData.put("chatId", chatId);
 
-        // Добавляем участников
         Map<String, Boolean> members = new HashMap<>();
         for (String uid : selectedUsers) {
             members.put(uid, true);
         }
         groupData.put("members", members);
 
-        // Аватар загрузим позже, либо сначала отправим на сервер, а потом обновим
-        // Если аватар выбран, нужно загрузить его (например, в Yandex Cloud) и сохранить URL.
-        // Для простоты пока установим поле avatarUrl = "" (обновим после загрузки)
-
-        // 3. Создаём узел чата в /chats/{chatId}
         Map<String, Object> chatData = new HashMap<>();
         chatData.put("chatId", chatId);
         chatData.put("chatType", "group");
@@ -199,7 +263,6 @@ public class CreateGroupActivity extends AppCompatActivity {
         chatData.put("timestamp", System.currentTimeMillis());
         chatData.put("messageType", "system");
 
-        // 4. Для каждого участника создаём/обновляем запись в /userChats/{userId}/{chatId}
         Map<String, Object> userChatEntry = new HashMap<>();
         userChatEntry.put("chatId", chatId);
         userChatEntry.put("chatType", "group");
@@ -211,7 +274,6 @@ public class CreateGroupActivity extends AppCompatActivity {
         userChatEntry.put("lastMessageSenderId", currentUser.getUid());
         userChatEntry.put("messageType", "system");
 
-        // Выполняем многопутевое обновление (batch update) для атомарности
         Map<String, Object> updates = new HashMap<>();
         updates.put("groups/" + groupId, groupData);
         updates.put("chats/" + chatId, chatData);
@@ -219,19 +281,22 @@ public class CreateGroupActivity extends AppCompatActivity {
             updates.put("userChats/" + uid + "/" + chatId, userChatEntry);
         }
 
-        FirebaseDatabase.getInstance().getReference()
-                .updateChildren(updates)
+        FirebaseDatabase.getInstance().getReference().updateChildren(updates)
                 .addOnCompleteListener(task -> {
                     progressBar.setVisibility(View.GONE);
                     createButton.setEnabled(true);
                     if (task.isSuccessful()) {
-                        // Если есть аватар, загружаем его и обновляем поле avatarUrl в группе
+                        // Если выбран аватар, загружаем его и обновляем URL
                         if (selectedAvatarUri != null) {
                             uploadGroupAvatar(groupId, selectedAvatarUri);
                         }
                         Toast.makeText(CreateGroupActivity.this, "Группа создана!", Toast.LENGTH_SHORT).show();
-                        // Открываем групповой чат и закрываем текущую активность
-                        openGroupChat(chatId, groupId, groupName);
+                        // Открываем групповой чат
+                        Intent intent = new Intent(CreateGroupActivity.this, GroupChatActivity.class);
+                        intent.putExtra("chatId", chatId);
+                        intent.putExtra("groupId", groupId);
+                        intent.putExtra("groupName", groupName);
+                        startActivity(intent);
                         finish();
                     } else {
                         Log.e(TAG, "Ошибка создания группы", task.getException());
@@ -240,30 +305,15 @@ public class CreateGroupActivity extends AppCompatActivity {
                 });
     }
 
-    private void openGroupChat(String chatId, String groupId, String groupName) {
-        Intent intent = new Intent(this, GroupChatActivity.class);
-        intent.putExtra("chatId", chatId);
-        intent.putExtra("groupId", groupId);
-        intent.putExtra("groupName", groupName);
-        startActivity(intent);
-    }
-
-
-    private static final String bucketName = "server21";
-    private static final String YANDEX_CLOUD_ACCESS_KEY = "YCAJETFSyLNjaaVZt_qSnMevC";
-    private static final String YANDEX_CLOUD_SECRET_KEY = "YCNfeBlLIjDPEhWRcWl14PYmQE9oOI6pXcePO6fu";
-
-    // Загрузка аватара в Yandex Cloud (или Firebase Storage)
+    // --- Загрузка аватара группы (аналогично другим файлам) ---
     private void uploadGroupAvatar(String groupId, Uri avatarUri) {
         if (groupId == null || avatarUri == null) {
             Toast.makeText(this, "Нет данных для загрузки", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // Показываем прогресс
         Toast.makeText(this, "Загрузка аватара...", Toast.LENGTH_SHORT).show();
 
-        // Создаём временный файл из Uri (метод createTempFileFromUri должен быть в этом же классе)
         File tempFile = createTempFileFromUri(avatarUri);
         if (tempFile == null) {
             Toast.makeText(this, "Не удалось создать временный файл", Toast.LENGTH_SHORT).show();
@@ -274,26 +324,21 @@ public class CreateGroupActivity extends AppCompatActivity {
                 YANDEX_CLOUD_ACCESS_KEY,
                 YANDEX_CLOUD_SECRET_KEY
         );
-
-        // Уникальное имя файла
         String fileName = "group_avatars/" + groupId + "_" + System.currentTimeMillis() + ".jpg";
-        String bucketName = "server21";
 
-        uploader.uploadFile(tempFile, bucketName, fileName, new YandexCloudUploader.UploadCallback() {
+        uploader.uploadFile(tempFile, BUCKET_NAME, fileName, new YandexCloudUploader.UploadCallback() {
             @Override
             public void onSuccess(String fileUrl) {
                 runOnUiThread(() -> {
-                    // Удаляем временный файл
                     if (tempFile.exists()) tempFile.delete();
-
-                    // Сохраняем URL в Firebase (используем FirebaseDatabase напрямую)
+                    // Сохраняем URL аватара в Firebase
                     FirebaseDatabase.getInstance().getReference()
                             .child("groups").child(groupId).child("avatarUrl")
                             .setValue(fileUrl)
                             .addOnSuccessListener(aVoid ->
                                     Toast.makeText(CreateGroupActivity.this, "Аватар группы обновлён", Toast.LENGTH_SHORT).show())
                             .addOnFailureListener(e -> {
-                                Log.e(TAG, "Ошибка сохранения URL аватара", e); // e - это Exception
+                                Log.e(TAG, "Ошибка сохранения URL аватара", e);
                                 Toast.makeText(CreateGroupActivity.this, "Ошибка обновления аватара", Toast.LENGTH_SHORT).show();
                             });
                 });
@@ -310,12 +355,10 @@ public class CreateGroupActivity extends AppCompatActivity {
 
             @Override
             public void onProgress(int progress) {
-                // По желанию можно обновлять UI
                 Log.d(TAG, "Загрузка аватара: " + progress + "%");
             }
         });
     }
-
 
     private File createTempFileFromUri(Uri uri) {
         try {
@@ -335,37 +378,5 @@ public class CreateGroupActivity extends AppCompatActivity {
             Log.e(TAG, "Ошибка создания временного файла", e);
             return null;
         }
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-    // Вспомогательный метод: читает InputStream в byte[]
-    private byte[] getBytesFromInputStream(InputStream inputStream) throws IOException {
-        ByteArrayOutputStream byteBuffer = new ByteArrayOutputStream();
-        byte[] buffer = new byte[8192];
-        int len;
-        while ((len = inputStream.read(buffer)) != -1) {
-            byteBuffer.write(buffer, 0, len);
-        }
-        return byteBuffer.toByteArray();
-    }
-
-    // Показ Toast в UI-потоке
-    private void showToastOnUi(String message) {
-        runOnUiThread(() -> Toast.makeText(this, message, Toast.LENGTH_SHORT).show());
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
     }
 }

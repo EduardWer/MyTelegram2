@@ -57,7 +57,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:scaleType="centerCrop"
-                android:src="@drawable/icon_" />
+                android:src="@drawable/ic_person" />
 
         </androidx.cardview.widget.CardView>
 
@@ -79,6 +79,18 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textColor="@color/gray"/>
+
+    <!-- Поиск пользователей -->
+    <EditText
+        android:id="@+id/searchUsersEditText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Поиск..."
+        android:padding="12dp"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/edit_text_background"
+        android:textSize="14sp"
+        android:inputType="text"/>
 
     <!-- Прогресс загрузки -->
     <ProgressBar

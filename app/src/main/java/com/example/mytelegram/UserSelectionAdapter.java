@@ -1,13 +1,17 @@
 package com.example.mytelegram;
 
+import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.CheckBox;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
+
+import com.bumptech.glide.Glide;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -16,12 +20,12 @@ import java.util.Set;
 
 public class UserSelectionAdapter extends RecyclerView.Adapter<UserSelectionAdapter.ViewHolder> {
 
-    private List<UserModel> userList;
-    private Set<String> selectedIds;
-    private String currentUserId;
+    private List<UserModel> users;          // текущий список пользователей
+    private Set<String> selectedIds;        // выбранные UID
+    private String currentUserId;           // UID текущего пользователя (не используется, но оставлен)
 
-    public UserSelectionAdapter(List<UserModel> userList, String currentUserId) {
-        this.userList = userList;
+    public UserSelectionAdapter(List<UserModel> users, String currentUserId) {
+        this.users = users;
         this.currentUserId = currentUserId;
         this.selectedIds = new HashSet<>();
     }
@@ -36,37 +40,66 @@ public class UserSelectionAdapter extends RecyclerView.Adapter<UserSelectionAdap
 
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-        UserModel user = userList.get(position);
-        holder.username.setText(user.getUsername());
-        // Не даём выбрать самого себя (уже отфильтровано, но на всякий случай)
-        if (user.getUid().equals(currentUserId)) {
-            holder.checkBox.setVisibility(View.GONE);
+        UserModel user = users.get(position);
+
+        // Имя пользователя
+        holder.nameTextView.setText(
+                user.getUsername() != null ? user.getUsername() : "Пользователь"
+        );
+
+        // Чекбокс
+        holder.checkBox.setChecked(selectedIds.contains(user.getUid()));
+
+        // Аватар
+        if (!TextUtils.isEmpty(user.getAvatarUrl())) {
+            Glide.with(holder.itemView.getContext())
+                    .load(user.getAvatarUrl())
+                    .placeholder(R.drawable.ic_person)
+                    .circleCrop()
+                    .into(holder.avatarImageView);
         } else {
-            holder.checkBox.setVisibility(View.VISIBLE);
-            holder.checkBox.setChecked(selectedIds.contains(user.getUid()));
-            holder.checkBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                if (isChecked) selectedIds.add(user.getUid());
-                else selectedIds.remove(user.getUid());
-            });
+            holder.avatarImageView.setImageResource(R.drawable.ic_person);
         }
+
+        // Клик для выбора/снятия галочки
+        holder.itemView.setOnClickListener(v -> {
+            String uid = user.getUid();
+            if (selectedIds.contains(uid)) {
+                selectedIds.remove(uid);
+            } else {
+                selectedIds.add(uid);
+            }
+            notifyItemChanged(position);
+        });
     }
 
     @Override
     public int getItemCount() {
-        return userList.size();
+        return users != null ? users.size() : 0;
     }
 
+    /** Замена всего списка (например, после фильтрации) */
+    public void updateList(List<UserModel> newList) {
+        this.users = newList;
+        notifyDataSetChanged();
+    }
+
+    /** Получить список UID выбранных пользователей */
     public List<String> getSelectedUserIds() {
         return new ArrayList<>(selectedIds);
     }
 
+    // ------------------- ViewHolder ----------------------
     static class ViewHolder extends RecyclerView.ViewHolder {
-        TextView username;
+        ImageView avatarImageView;
+        TextView nameTextView;
         CheckBox checkBox;
-        public ViewHolder(@NonNull View itemView) {
+
+        ViewHolder(@NonNull View itemView) {
             super(itemView);
-            username = itemView.findViewById(R.id.userNameTextView);
-            checkBox = itemView.findViewById(R.id.userCheckBox);
+            avatarImageView = itemView.findViewById(R.id.userAvatar);
+            nameTextView = itemView.findViewById(R.id.userNameTextView);   // точно как в XML
+            checkBox = itemView.findViewById(R.id.userCheckBox);          // большая буква B
         }
     }
 }

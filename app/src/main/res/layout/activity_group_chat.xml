@@ -46,7 +46,6 @@
                     android:id="@+id/groupAvatar"
                     android:layout_width="40dp"
                     android:layout_height="40dp"
-                    android:background="@drawable/circle_background"
                     android:contentDescription="Аватар группы"
                     android:scaleType="centerCrop"
                     android:src="@drawable/ic_person"
@@ -59,8 +58,7 @@
                     android:layout_width="16dp"
                     android:layout_height="16dp"
                     android:layout_gravity="bottom|end"
-                    android:src="@drawable/ic_person"
-                    android:background="@drawable/ic_person"
+
                     android:padding="1dp" />
             </FrameLayout>
 
@@ -101,7 +99,8 @@
                 android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Информация о группе"
-                android:src="@drawable/ic_person"
+                android:clickable="false"
+
                 app:tint="@color/black" />
 
         </LinearLayout>
