@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
@@ -41,6 +42,8 @@ public class MainActivity extends AppCompatActivity {
     private static final int PERMISSION_REQUEST_CODE = 100;
 
     private User currentUser;
+
+    private String currentUserId;
     private AppBarConfiguration mAppBarConfiguration;
     private ActivityMainBinding binding;
     private DatabaseReference databaseReference;
@@ -81,7 +84,24 @@ public class MainActivity extends AppCompatActivity {
     private void initFirebase() {
         firebaseAuth = FirebaseAuth.getInstance();
         databaseReference = FirebaseDatabase.getInstance().getReference();
+
+        FirebaseUser currentFirebaseUser = firebaseAuth.getCurrentUser();
+        if (currentFirebaseUser != null) {
+            currentUserId = currentFirebaseUser.getUid();
+        } else {
+            currentUserId = "vLkUH1cFOrTt63pUHPXtNRfRhbu1"; // fallback, если пользователь не авторизован
+        }
+
+        // Настройка автоматического офлайна при обрыве соединения
+        DatabaseReference onlineRef = databaseReference
+                .child("users").child(currentUserId).child("online");
+        onlineRef.onDisconnect().setValue(false);
+        // Явно ставим онлайн сейчас
+        onlineRef.setValue(true).addOnFailureListener(e ->
+                Log.e(TAG, "Ошибка установки онлайн-статуса при запуске", e));
     }
+
+
 
     private void checkAndRequestPermissions() {
         // Проверяем разрешения для Android 6.0+
@@ -207,6 +227,9 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     }
+
+
+
 
     @Override
     protected void onStart() {

@@ -1,7 +1,6 @@
 package com.example.mytelegram.ui.home;
 
 import android.app.AlertDialog;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -51,27 +50,28 @@ public class HomeFragment extends Fragment {
     private static final String TAG = "HomeFragment";
     private static final int REQUEST_CODE_OPEN_CHAT = 1001;
 
-
-    // В начало класса HomeFragment
-    private final Map<String, ValueEventListener> onlineListeners = new HashMap<>();
     private DatabaseReference databaseReference;
     private ChatsAdapter adapter;
     private RecyclerView recyclerView;
     private ProgressBar progressBar;
     private String currentUserId;
 
-    // Единое хранилище всех чатов (ключ = chatId)
+    // Все чаты
     private final Map<String, Chat> loadedChats = new HashMap<>();
-    // Кэш информации о группах (groupId -> GroupInfo)
+    // Кэш групп: chatId -> GroupInfo
     private final Map<String, GroupInfo> groupInfoMap = new HashMap<>();
-    // Связь chatId -> groupId для групповых чатов
+    // Связь chatId -> groupId
     private final Map<String, String> chatIdToGroupId = new HashMap<>();
 
     private ValueEventListener chatsListener;
     private ValueEventListener groupsListener;
+
+    // Для онлайн-статуса
+    private final Map<String, ValueEventListener> onlineListeners = new HashMap<>();
+
+    // Временное хранение chatId для обновления после возврата из чата
     private String pendingRefreshChatId = null;
 
-    // Простая структура для хранения названия и аватара группы
     private static class GroupInfo {
         String name;
         String avatarUrl;
@@ -80,14 +80,12 @@ public class HomeFragment extends Fragment {
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
         FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
         if (currentUser != null) {
             currentUserId = currentUser.getUid();
         } else {
             currentUserId = "vLkUH1cFOrTt63pUHPXtNRfRhbu1";
         }
-
         databaseReference = FirebaseDatabase.getInstance().getReference();
     }
 
@@ -100,17 +98,14 @@ public class HomeFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-
         recyclerView = view.findViewById(R.id.recyclerViewChats);
         progressBar = view.findViewById(R.id.progressBar);
-
         setupRecyclerView();
         setupSwipeToDelete();
-
         loadGroupsThenChats();
     }
 
-    // ==================== Swipe to delete ====================
+    // --- Swipe to delete ---
     private void setupSwipeToDelete() {
         ItemTouchHelper.SimpleCallback swipeCallback = new ItemTouchHelper.SimpleCallback(
                 0, ItemTouchHelper.LEFT) {
@@ -179,18 +174,15 @@ public class HomeFragment extends Fragment {
         itemTouchHelper.attachToRecyclerView(recyclerView);
     }
 
-    // ==================== RecyclerView ====================
     private void setupRecyclerView() {
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
         adapter = new ChatsAdapter(new ArrayList<>(), chat -> openChat(chat));
         recyclerView.setAdapter(adapter);
     }
 
-    // ==================== Загрузка групп и чатов ====================
+    // --- Загрузка данных ---
     private void loadGroupsThenChats() {
         showLoading(true);
-
-        // Загружаем все группы один раз (и подписываемся на изменения)
         groupsListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
@@ -210,14 +202,13 @@ public class HomeFragment extends Fragment {
                         chatIdToGroupId.put(chatId, groupId);
                     }
                 }
-                // После загрузки групп запускаем слушатель чатов
                 loadChats();
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 Log.e(TAG, "Groups load cancelled: " + error.getMessage());
-                loadChats(); // пробуем загрузить чаты даже без групп
+                loadChats();
             }
         };
         databaseReference.child("groups").addValueEventListener(groupsListener);
@@ -241,19 +232,18 @@ public class HomeFragment extends Fragment {
                     chat.setChatId(chatId);
 
                     if (isPersonalChat(chatId)) {
-                        // Личный чат
                         chat.setChatType("private");
                         String[] users = chatId.split("_");
                         String participantId = users[0].equals(currentUserId) ? users[1] : users[0];
                         chat.setParticipantId(participantId);
                         loadParticipantInfo(participantId, chat);
+                        startOnlineListener(participantId, chat);   // ← слушаем онлайн
                     } else {
-                        // Групповой чат
                         chat.setChatType("group");
                         GroupInfo info = groupInfoMap.get(chatId);
                         if (info != null) {
                             chat.setGroupName(info.name);
-                            chat.setParticipantName(info.name); // для отображения
+                            chat.setParticipantName(info.name);
                             chat.setParticipantAvatar(info.avatarUrl);
                         } else {
                             chat.setGroupName("Группа");
@@ -264,9 +254,7 @@ public class HomeFragment extends Fragment {
                         chat.setGroupId(groupId != null ? groupId : "");
                     }
 
-                    // Загружаем последнее сообщение и счётчик непрочитанных
                     loadLastMessageInfo(chatSnapshot, chat);
-
                     loadedChats.put(chatId, chat);
                 }
 
@@ -318,7 +306,37 @@ public class HomeFragment extends Fragment {
                 });
     }
 
-    // ==================== Последнее сообщение и непрочитанные ====================
+    // --- Онлайн-статус ---
+    private void startOnlineListener(String userId, Chat chat) {
+        if (TextUtils.isEmpty(userId)) return;
+
+        // Удаляем предыдущий слушатель для этого пользователя, если был
+        ValueEventListener old = onlineListeners.remove(userId);
+        if (old != null) {
+            databaseReference.child("users").child(userId).child("online")
+                    .removeEventListener(old);
+        }
+
+        ValueEventListener listener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                Boolean online = snapshot.getValue(Boolean.class);
+                chat.setOnline(online != null && online);
+                updateAdapter();   // обновим UI
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "Online listener cancelled for " + userId);
+            }
+        };
+
+        onlineListeners.put(userId, listener);
+        databaseReference.child("users").child(userId).child("online")
+                .addValueEventListener(listener);
+    }
+
+    // --- Последнее сообщение и непрочитанные ---
     private void loadLastMessageInfo(DataSnapshot chatSnapshot, Chat chat) {
         String lastMessage = "Нет сообщений";
         long lastTimestamp = 0;
@@ -345,7 +363,6 @@ public class HomeFragment extends Fragment {
                     lastMessageType = msgType != null ? msgType : "text";
                 }
 
-                // Считаем непрочитанные (только чужие сообщения, не прочитанные мной)
                 if (senderId != null && !senderId.equals(currentUserId)) {
                     if (!checkMessageReadStatus(data, currentUserId)) {
                         unreadCount++;
@@ -395,7 +412,7 @@ public class HomeFragment extends Fragment {
         return isRead instanceof Boolean && (Boolean) isRead;
     }
 
-    // ==================== Удаление ====================
+    // --- Удаление ---
     private void showDeleteDialog(Chat chat, int position) {
         String name = chat.isGroupChat() ? chat.getGroupName() : chat.getParticipantName();
         String message = chat.isGroupChat()
@@ -412,8 +429,6 @@ public class HomeFragment extends Fragment {
 
     private void deleteChat(Chat chat, int position) {
         String chatId = chat.getChatId();
-
-        // Удаляем из локального списка сразу
         loadedChats.remove(chatId);
         List<Chat> currentChats = adapter.getChats();
         if (position < currentChats.size()) {
@@ -421,7 +436,6 @@ public class HomeFragment extends Fragment {
             adapter.setChats(currentChats);
         }
 
-        // Личный чат – удаляем полностью из Firebase
         if (!chat.isGroupChat()) {
             databaseReference.child("chats").child(chatId).removeValue()
                     .addOnSuccessListener(aVoid -> Toast.makeText(getContext(), "Чат удалён", Toast.LENGTH_SHORT).show())
@@ -430,12 +444,11 @@ public class HomeFragment extends Fragment {
                         Log.e(TAG, "deleteChat error: " + e.getMessage());
                     });
         } else {
-            // Групповой чат – только убираем из интерфейса (можно добавить удаление из userChats, если нужно)
             Toast.makeText(getContext(), "Групповой чат скрыт из списка", Toast.LENGTH_SHORT).show();
         }
     }
 
-    // ==================== Открытие чата и сброс счётчика ====================
+    // --- Открытие чата ---
     private void openChat(Chat chat) {
         Intent intent;
         if (chat.isGroupChat()) {
@@ -460,15 +473,14 @@ public class HomeFragment extends Fragment {
         if (requestCode == REQUEST_CODE_OPEN_CHAT && !TextUtils.isEmpty(pendingRefreshChatId)) {
             Chat chat = loadedChats.get(pendingRefreshChatId);
             if (chat != null) {
-                // МГНОВЕННЫЙ сброс счётчика (без задержки)
-                chat.setUnreadCount(0);
+                chat.setUnreadCount(0);   // мгновенный сброс
                 updateAdapter();
             }
             pendingRefreshChatId = null;
         }
     }
 
-    // ==================== Форматирование ====================
+    // --- Форматирование ---
     private String getMessageDisplayText(String messageText, String messageType) {
         if (TextUtils.isEmpty(messageType)) {
             return !TextUtils.isEmpty(messageText) ? messageText : "Сообщение";
@@ -490,17 +502,17 @@ public class HomeFragment extends Fragment {
         Date date = new Date(timestamp);
         Calendar msgCal = Calendar.getInstance();
         msgCal.setTime(date);
-
         Calendar nowCal = Calendar.getInstance();
-        if (msgCal.get(Calendar.YEAR) == nowCal.get(Calendar.YEAR) &&
-                msgCal.get(Calendar.DAY_OF_YEAR) == nowCal.get(Calendar.DAY_OF_YEAR)) {
+
+        if (msgCal.get(Calendar.YEAR) == nowCal.get(Calendar.YEAR)
+                && msgCal.get(Calendar.DAY_OF_YEAR) == nowCal.get(Calendar.DAY_OF_YEAR)) {
             return new SimpleDateFormat("HH:mm", Locale.getDefault()).format(date);
         }
 
         Calendar yesterday = Calendar.getInstance();
         yesterday.add(Calendar.DAY_OF_YEAR, -1);
-        if (msgCal.get(Calendar.YEAR) == yesterday.get(Calendar.YEAR) &&
-                msgCal.get(Calendar.DAY_OF_YEAR) == yesterday.get(Calendar.DAY_OF_YEAR)) {
+        if (msgCal.get(Calendar.YEAR) == yesterday.get(Calendar.YEAR)
+                && msgCal.get(Calendar.DAY_OF_YEAR) == yesterday.get(Calendar.DAY_OF_YEAR)) {
             return "вчера";
         }
 
@@ -533,5 +545,10 @@ public class HomeFragment extends Fragment {
         if (groupsListener != null) {
             databaseReference.child("groups").removeEventListener(groupsListener);
         }
+        for (Map.Entry<String, ValueEventListener> entry : onlineListeners.entrySet()) {
+            databaseReference.child("users").child(entry.getKey()).child("online")
+                    .removeEventListener(entry.getValue());
+        }
+        onlineListeners.clear();
     }
 }

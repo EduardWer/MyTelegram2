@@ -8,7 +8,7 @@
     android:gravity="center_vertical"
     android:background="?attr/selectableItemBackground">
 
-    <!-- Аватар с иконкой группы -->
+    <!-- Аватар с иконкой группы и индикатором онлайна -->
     <FrameLayout
         android:layout_width="56dp"
         android:layout_height="56dp">
@@ -23,7 +23,7 @@
             android:outlineProvider="background"
             android:background="@drawable/ic_person" />
 
-        <!-- Иконка группы (показывается только для групповых чатов) -->
+        <!-- Иконка группы (только для групповых чатов) -->
         <ImageView
             android:id="@+id/groupIcon"
             android:layout_width="22dp"
@@ -33,9 +33,18 @@
             android:visibility="gone"
             android:background="@drawable/circle_background"
             android:padding="2dp" />
+
+        <!-- Индикатор "онлайн" (только для личных чатов, если пользователь в сети) -->
+        <View
+            android:id="@+id/onlineIndicator"
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:layout_gravity="top|end"
+            android:background="@drawable/online_dot"
+            android:visibility="gone" />
     </FrameLayout>
 
-    <!-- Информация о чате -->
+    <!-- Информация о чате (остальное без изменений) -->
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"

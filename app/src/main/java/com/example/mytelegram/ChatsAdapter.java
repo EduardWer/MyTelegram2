@@ -48,12 +48,19 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
 
     @Override
     public void onBindViewHolder(@NonNull ChatViewHolder holder, int position) {
+
         Chat chat = chatList.get(position);
         holder.bind(chat);
 
         holder.itemView.setOnClickListener(v -> {
             onChatClickListener.onChatClick(chat);
         });
+
+        if (chat.isOnline()) {
+            holder.onlineIndicator.setVisibility(View.VISIBLE);
+        } else {
+            holder.onlineIndicator.setVisibility(View.GONE);
+        }
     }
 
     @Override
@@ -77,9 +84,12 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
         private TextView textViewUnreadCount;
         private ImageView imageViewAvatar;
         private ImageView groupIcon;
+        View onlineIndicator;
 
         public ChatViewHolder(@NonNull View itemView) {
             super(itemView);
+
+            onlineIndicator = itemView.findViewById(R.id.onlineIndicator);
             textViewUserName = itemView.findViewById(R.id.textViewUserName);
             textViewLastMessage = itemView.findViewById(R.id.textViewLastMessage);
             textViewTime = itemView.findViewById(R.id.textViewTime);
