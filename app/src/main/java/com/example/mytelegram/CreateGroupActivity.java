@@ -27,6 +27,11 @@ import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -243,13 +248,120 @@ public class CreateGroupActivity extends AppCompatActivity {
         startActivity(intent);
     }
 
+
+    private static final String bucketName = "server21";
+    private static final String YANDEX_CLOUD_ACCESS_KEY = "YCAJETFSyLNjaaVZt_qSnMevC";
+    private static final String YANDEX_CLOUD_SECRET_KEY = "YCNfeBlLIjDPEhWRcWl14PYmQE9oOI6pXcePO6fu";
+
     // Загрузка аватара в Yandex Cloud (или Firebase Storage)
     private void uploadGroupAvatar(String groupId, Uri avatarUri) {
-        // Здесь нужно реализовать загрузку (как в ChatActivity для файлов)
-        // После успешной загрузки обновляем узел groups/{groupId}/avatarUrl
-        // Для примера используем заглушку:
-        Log.d(TAG, "Загрузка аватара для группы " + groupId);
-        // TODO: реализация загрузки в облако
+        if (groupId == null || avatarUri == null) {
+            Toast.makeText(this, "Нет данных для загрузки", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Показываем прогресс
+        Toast.makeText(this, "Загрузка аватара...", Toast.LENGTH_SHORT).show();
+
+        // Создаём временный файл из Uri (метод createTempFileFromUri должен быть в этом же классе)
+        File tempFile = createTempFileFromUri(avatarUri);
+        if (tempFile == null) {
+            Toast.makeText(this, "Не удалось создать временный файл", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        YandexCloudUploader uploader = new YandexCloudUploader(
+                YANDEX_CLOUD_ACCESS_KEY,
+                YANDEX_CLOUD_SECRET_KEY
+        );
+
+        // Уникальное имя файла
+        String fileName = "group_avatars/" + groupId + "_" + System.currentTimeMillis() + ".jpg";
+        String bucketName = "server21";
+
+        uploader.uploadFile(tempFile, bucketName, fileName, new YandexCloudUploader.UploadCallback() {
+            @Override
+            public void onSuccess(String fileUrl) {
+                runOnUiThread(() -> {
+                    // Удаляем временный файл
+                    if (tempFile.exists()) tempFile.delete();
+
+                    // Сохраняем URL в Firebase (используем FirebaseDatabase напрямую)
+                    FirebaseDatabase.getInstance().getReference()
+                            .child("groups").child(groupId).child("avatarUrl")
+                            .setValue(fileUrl)
+                            .addOnSuccessListener(aVoid ->
+                                    Toast.makeText(CreateGroupActivity.this, "Аватар группы обновлён", Toast.LENGTH_SHORT).show())
+                            .addOnFailureListener(e -> {
+                                Log.e(TAG, "Ошибка сохранения URL аватара", e); // e - это Exception
+                                Toast.makeText(CreateGroupActivity.this, "Ошибка обновления аватара", Toast.LENGTH_SHORT).show();
+                            });
+                });
+            }
+
+            @Override
+            public void onError(String error) {
+                runOnUiThread(() -> {
+                    if (tempFile.exists()) tempFile.delete();
+                    Log.e(TAG, "Ошибка загрузки аватара: " + error); // Исправлено: просто строка
+                    Toast.makeText(CreateGroupActivity.this, "Ошибка загрузки: " + error, Toast.LENGTH_LONG).show();
+                });
+            }
+
+            @Override
+            public void onProgress(int progress) {
+                // По желанию можно обновлять UI
+                Log.d(TAG, "Загрузка аватара: " + progress + "%");
+            }
+        });
+    }
+
+
+    private File createTempFileFromUri(Uri uri) {
+        try {
+            InputStream inputStream = getContentResolver().openInputStream(uri);
+            if (inputStream == null) return null;
+            File tempFile = File.createTempFile("upload", ".tmp", getCacheDir());
+            FileOutputStream outputStream = new FileOutputStream(tempFile);
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, bytesRead);
+            }
+            outputStream.close();
+            inputStream.close();
+            return tempFile;
+        } catch (IOException e) {
+            Log.e(TAG, "Ошибка создания временного файла", e);
+            return null;
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+    // Вспомогательный метод: читает InputStream в byte[]
+    private byte[] getBytesFromInputStream(InputStream inputStream) throws IOException {
+        ByteArrayOutputStream byteBuffer = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int len;
+        while ((len = inputStream.read(buffer)) != -1) {
+            byteBuffer.write(buffer, 0, len);
+        }
+        return byteBuffer.toByteArray();
+    }
+
+    // Показ Toast в UI-потоке
+    private void showToastOnUi(String message) {
+        runOnUiThread(() -> Toast.makeText(this, message, Toast.LENGTH_SHORT).show());
     }
 
     @Override
