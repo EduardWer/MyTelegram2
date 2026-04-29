@@ -1,9 +1,12 @@
 package com.example.mytelegram.Fragments;
 
+import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -12,21 +15,32 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.FileProvider;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.Glide;
 import com.example.mytelegram.ChatActivity;
+import com.example.mytelegram.GroupChatActivity;
 import com.example.mytelegram.R;
 
+import java.io.File;
+import java.io.IOException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 public class GalleryFragment extends Fragment {
 
+    private static final String TAG = "GalleryFragment";
+    private static final int REQUEST_IMAGE_CAPTURE = 1002;
+
     private RecyclerView recyclerView;
     private List<MediaItem> mediaItems = new ArrayList<>();
+    private Uri cameraImageUri;
 
     @Nullable
     @Override
@@ -42,13 +56,8 @@ public class GalleryFragment extends Fragment {
 
     private void loadMedia() {
         mediaItems.clear();
-
-        // Загружаем изображения
         loadImages();
-
-        // Загружаем видео
         loadVideos();
-
         recyclerView.setAdapter(new MediaAdapter(mediaItems));
     }
 
@@ -74,17 +83,22 @@ public class GalleryFragment extends Fragment {
                 String path = cursor.getString(dataIndex);
                 long id = cursor.getLong(idIndex);
 
-                MediaItem item = new MediaItem();
-                item.path = path;
-                item.type = "image";
-                item.contentUri = Uri.withAppendedPath(
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI, String.valueOf(id));
-
-                mediaItems.add(item);
+                if (path != null && new File(path).exists()) {
+                    MediaItem item = new MediaItem();
+                    item.path = path;
+                    item.type = "image";
+                    item.contentUri = Uri.withAppendedPath(
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, String.valueOf(id));
+                    mediaItems.add(item);
+                }
             }
             cursor.close();
         }
     }
+
+
+
+
 
     private void loadVideos() {
         String[] projection = {
@@ -108,13 +122,14 @@ public class GalleryFragment extends Fragment {
                 String path = cursor.getString(dataIndex);
                 long id = cursor.getLong(idIndex);
 
-                MediaItem item = new MediaItem();
-                item.path = path;
-                item.type = "video";
-                item.contentUri = Uri.withAppendedPath(
-                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI, String.valueOf(id));
-
-                mediaItems.add(item);
+                if (path != null && new File(path).exists()) {
+                    MediaItem item = new MediaItem();
+                    item.path = path;
+                    item.type = "video";
+                    item.contentUri = Uri.withAppendedPath(
+                            MediaStore.Video.Media.EXTERNAL_CONTENT_URI, String.valueOf(id));
+                    mediaItems.add(item);
+                }
             }
             cursor.close();
         }
@@ -147,13 +162,11 @@ public class GalleryFragment extends Fragment {
         public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
             MediaItem item = items.get(position);
 
-            // Загружаем превью
             Glide.with(holder.itemView.getContext())
                     .load(item.contentUri)
                     .centerCrop()
                     .into(holder.imageView);
 
-            // Показываем иконку для видео
             if ("video".equals(item.type)) {
                 holder.videoIcon.setVisibility(View.VISIBLE);
             } else {
@@ -161,8 +174,19 @@ public class GalleryFragment extends Fragment {
             }
 
             holder.itemView.setOnClickListener(v -> {
+                Log.d(TAG, "Выбран файл: type=" + item.type + ", uri=" + item.contentUri);
+
+                // Универсальная отправка для любого типа чата
                 if (getActivity() instanceof ChatActivity) {
+                    // Личный чат
                     ((ChatActivity) getActivity()).sendMediaFromGallery(item.contentUri, item.type);
+                    ((ChatActivity) getActivity()).closeMediaPanel();
+                } else if (getActivity() instanceof GroupChatActivity) {
+                    // Групповой чат
+                    ((GroupChatActivity) getActivity()).sendMediaFromGallery(item.contentUri, item.type);
+                    ((GroupChatActivity) getActivity()).closeMediaPanel();
+                } else {
+                    Toast.makeText(getContext(), "Ошибка: неизвестный тип чата", Toast.LENGTH_SHORT).show();
                 }
             });
         }

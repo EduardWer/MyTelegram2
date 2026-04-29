@@ -4,10 +4,12 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -16,6 +18,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.example.mytelegram.ChatActivity;
+import com.example.mytelegram.GroupChatActivity;
 import com.example.mytelegram.R;
 
 import java.io.File;
@@ -23,6 +26,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DocumentFragment extends Fragment {
+
+    private static final String TAG = "DocumentFragment";
 
     private RecyclerView recyclerView;
     private DocumentAdapter adapter;
@@ -33,32 +38,41 @@ public class DocumentFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_documents, container, false);
         recyclerView = view.findViewById(R.id.recyclerView);
-
         setupRecyclerView();
         loadDocuments();
-
         return view;
     }
+
+
 
     private void setupRecyclerView() {
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
         adapter = new DocumentAdapter(documentItems);
         adapter.setListener(item -> {
+            Log.d(TAG, "Выбран документ: " + item.name);
+
+            Uri uri = Uri.fromFile(new File(item.path));
+
+            // Универсальная отправка для любого типа чата
             if (getActivity() instanceof ChatActivity) {
-                Uri uri = Uri.fromFile(new File(item.path));
                 ((ChatActivity) getActivity()).sendDocumentFromPicker(uri);
                 ((ChatActivity) getActivity()).closeMediaPanel();
+            } else if (getActivity() instanceof GroupChatActivity) {
+                ((GroupChatActivity) getActivity()).sendDocumentFromPicker(uri);
+                ((GroupChatActivity) getActivity()).closeMediaPanel();
+            } else {
+                Toast.makeText(getContext(), "Ошибка: неизвестный тип чата", Toast.LENGTH_SHORT).show();
             }
         });
         recyclerView.setAdapter(adapter);
     }
 
+
+
+
     private void loadDocuments() {
         documentItems.clear();
-
-        // Загружаем документы из хранилища
         loadDocumentsFromStorage();
-
         adapter.notifyDataSetChanged();
     }
 
@@ -70,15 +84,15 @@ public class DocumentFragment extends Fragment {
                 MediaStore.Files.FileColumns.MIME_TYPE
         };
 
-        // Ищем только документы
-        String selection = MediaStore.Files.FileColumns.MIME_TYPE + " IN (?, ?, ?, ?, ?, ?)";
+        String selection = MediaStore.Files.FileColumns.MIME_TYPE + " IN (?, ?, ?, ?, ?, ?, ?)";
         String[] selectionArgs = {
                 "application/pdf",
                 "application/msword",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "application/vnd.ms-excel",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "text/plain"
+                "text/plain",
+                "application/vnd.ms-powerpoint"
         };
 
         String sortOrder = MediaStore.Files.FileColumns.DATE_ADDED + " DESC";
@@ -111,14 +125,13 @@ public class DocumentFragment extends Fragment {
                         item.size = formatFileSize(size);
                         item.mimeType = mimeType;
                         item.icon = getDocumentIcon(mimeType, name);
-
                         documentItems.add(item);
                     }
                 }
                 cursor.close();
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e(TAG, "Ошибка загрузки документов: " + e.getMessage());
         }
     }
 
@@ -133,15 +146,17 @@ public class DocumentFragment extends Fragment {
     private String getDocumentIcon(String mimeType, String fileName) {
         if (mimeType == null) mimeType = "";
 
-        if (mimeType.equals("application/pdf")) {
-            return "📕"; // PDF
-        } else if (mimeType.contains("word") || mimeType.contains("document")) {
-            return "📘"; // Word
-        } else if (mimeType.contains("excel") || mimeType.contains("spreadsheet")) {
-            return "📗"; // Excel
-        } else if (mimeType.equals("text/plain")) {
-            return "📄"; // TXT
-        } else if (fileName != null) {
+        switch (mimeType) {
+            case "application/pdf": return "📕";
+            case "application/msword":
+            case "application/vnd.openxmlformats-officedocument.wordprocessingml.document": return "📘";
+            case "application/vnd.ms-excel":
+            case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": return "📗";
+            case "application/vnd.ms-powerpoint": return "📙";
+            case "text/plain": return "📄";
+        }
+
+        if (fileName != null) {
             String ext = getFileExtension(fileName).toLowerCase();
             switch (ext) {
                 case "pdf": return "📕";
@@ -167,7 +182,6 @@ public class DocumentFragment extends Fragment {
         return (lastDot == -1) ? "" : fileName.substring(lastDot + 1);
     }
 
-    // Модель документа
     public static class DocumentItem {
         public String name;
         public String path;
@@ -176,7 +190,6 @@ public class DocumentFragment extends Fragment {
         public String icon;
     }
 
-    // Адаптер
     private static class DocumentAdapter extends RecyclerView.Adapter<DocumentAdapter.ViewHolder> {
 
         private List<DocumentItem> items;
@@ -206,9 +219,9 @@ public class DocumentFragment extends Fragment {
         public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
             DocumentItem item = items.get(position);
 
+            holder.iconText.setText(item.icon);
             holder.nameText.setText(item.name);
             holder.sizeText.setText(item.size);
-            holder.iconText.setText(item.icon);
 
             holder.itemView.setOnClickListener(v -> {
                 if (listener != null) {

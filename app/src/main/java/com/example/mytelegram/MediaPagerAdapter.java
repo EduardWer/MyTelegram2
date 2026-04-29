@@ -1,5 +1,10 @@
 package com.example.mytelegram;
 
+import static android.app.PendingIntent.getActivity;
+
+import android.util.Log;
+import android.widget.Toast;
+
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
@@ -28,4 +33,6 @@ public class MediaPagerAdapter extends FragmentStateAdapter {
     public int getItemCount() {
         return 2;
     }
+
+
 }
