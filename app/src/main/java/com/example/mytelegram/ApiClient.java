@@ -247,6 +247,42 @@ public class ApiClient {
         }).start();
     }
 
+
+
+    public static void sendCallToUser(String userId, String callerId, String callerName,
+                                      String callType, String callId, String roomName,
+                                      boolean isVideo) {
+        new Thread(() -> {
+            try {
+                URL url = new URL(BASE_URL + "/send-call-to-user");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+
+                JSONObject json = new JSONObject();
+                json.put("user_id", userId);
+                json.put("caller_id", callerId);
+                json.put("caller_name", callerName);
+                json.put("call_type", callType);
+                json.put("call_id", callId);
+                json.put("room_name", roomName);
+                json.put("is_video", isVideo);
+
+                OutputStream os = conn.getOutputStream();
+                os.write(json.toString().getBytes(StandardCharsets.UTF_8));
+                os.close();
+
+                int responseCode = conn.getResponseCode();
+                Log.d(TAG, "sendCallToUser response: " + responseCode);
+                conn.disconnect();
+
+            } catch (Exception e) {
+                Log.e(TAG, "sendCallToUser error: " + e.getMessage());
+            }
+        }).start();
+    }
+
     // ==================== ОТПРАВКА ПОЛЬЗОВАТЕЛЮ ====================
 
     /**

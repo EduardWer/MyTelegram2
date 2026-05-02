@@ -196,6 +196,9 @@ public class ChatActivity extends AppCompatActivity {
     private Uri currentFileUri;
     private String currentFileType;
 
+    // В методе onCreate или initViews
+
+
     // Executor для видео превью
     private final ExecutorService executorService = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -284,6 +287,12 @@ public class ChatActivity extends AppCompatActivity {
         bottomSheetBehavior.setHideable(true);
         bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
 
+        ImageButton callButton = findViewById(R.id.callButton);
+        ImageButton videoCallButton = findViewById(R.id.videoCallButton);
+
+        callButton.setOnClickListener(v -> makeCall(false));
+        videoCallButton.setOnClickListener(v -> makeCall(true));
+
         // Устанавливаем высоту в свернутом состоянии
         bottomSheetBehavior.setPeekHeight(1000);
 
@@ -338,19 +347,53 @@ public class ChatActivity extends AppCompatActivity {
     }
 
 
-// Длок для эксперементов
-
-
-
-
-
-    private void toggleMediaPanel() {
-        if (mediaPanelLayout.getVisibility() == View.VISIBLE) {
-            closeMediaPanel();
-        } else {
-            openMediaPanel();
+    private void makeCall(boolean isVideo) {
+        if (chatId == null || currentUserId == null) {
+            Toast.makeText(this, "Ошибка: неизвестный получатель", Toast.LENGTH_SHORT).show();
+            return;
         }
+
+        String callId = "call_" + System.currentTimeMillis();
+        String roomName = "room_" + chatId + "_" + System.currentTimeMillis();
+
+        // Отправляем push-уведомление о звонке
+        ApiClient.sendCallToUser(
+                recipientId,           // user_id (получатель)
+                currentUserId,    // caller_id
+                recipientName,         // caller_name
+                "incoming",       // call_type
+                callId,           // call_id
+                roomName,         // room_name
+                isVideo           // is_video
+        );
+
+        // Открываем активити звонка
+        Intent intent = new Intent(this, CallActivity.class);
+        intent.putExtra("call_id", callId);
+        intent.putExtra("room_name", roomName);
+        intent.putExtra("is_video", isVideo);
+        intent.putExtra("target_user_id", chatId);
+        intent.putExtra("target_user_name", recipientName);
+        startActivity(intent);
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     private void openMediaPanel() {
         mediaPanelLayout.setVisibility(View.VISIBLE);

@@ -56,13 +56,24 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="Входящий звонок..."
-            android:textColor="#B0B0B0"
+            android:text="В разговоре"
+            android:textColor="#4CAF50"
             android:textSize="16sp" />
+
+        <!-- Таймер звонка -->
+        <TextView
+            android:id="@+id/call_timer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="00:00"
+            android:textColor="#FFFFFF"
+            android:textSize="24sp"
+            android:fontFamily="monospace" />
 
     </LinearLayout>
 
-    <!-- Кнопки управления звонком (нижняя часть) -->
+    <!-- Кнопки управления звонком -->
     <LinearLayout
         android:id="@+id/call_controls"
         android:layout_width="match_parent"
@@ -71,7 +82,8 @@
         android:layout_marginBottom="60dp"
         android:orientation="horizontal"
         android:gravity="center"
-        android:paddingHorizontal="20dp">
+        android:paddingHorizontal="20dp"
+        android:visibility="visible">
 
         <!-- Кнопка "Динамик" -->
         <LinearLayout
@@ -85,42 +97,16 @@
                 android:id="@+id/btn_speaker"
                 android:layout_width="64dp"
                 android:layout_height="64dp"
-                android:src="@android:drawable/ic_lock_silent_mode_off"
+                android:src="@drawable/ic_speaker"
                 android:background="@drawable/circle_button_bg"
-                android:tint="#FFFFFF"
-                android:contentDescription="Динамик" />
+                android:contentDescription="Динамик"
+                app:tint="#FFFFFF" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="Динамик"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp" />
-        </LinearLayout>
-
-        <!-- Кнопка "Видео" -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:gravity="center">
-
-            <ImageButton
-                android:id="@+id/btn_video"
-                android:layout_width="64dp"
-                android:layout_height="64dp"
-                android:src="@android:drawable/ic_menu_camera"
-                android:background="@drawable/circle_button_bg"
-                android:tint="#FFFFFF"
-                android:contentDescription="Видео" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Видео"
                 android:textColor="#FFFFFF"
                 android:textSize="12sp" />
         </LinearLayout>
@@ -137,10 +123,10 @@
                 android:id="@+id/btn_mute"
                 android:layout_width="64dp"
                 android:layout_height="64dp"
-                android:src="@android:drawable/ic_btn_speak_now"
+                android:src="@drawable/ic_microphone"
                 android:background="@drawable/circle_button_bg"
-                android:tint="#FFFFFF"
-                android:contentDescription="Микрофон" />
+                android:contentDescription="Микрофон"
+                app:tint="#FFFFFF" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -150,85 +136,146 @@
                 android:textColor="#FFFFFF"
                 android:textSize="12sp" />
         </LinearLayout>
-    </LinearLayout>
 
-    <!-- Кнопки "Ответить" и "Отклонить" -->
-    <LinearLayout
-        android:id="@+id/answer_decline_buttons"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_above="@id/call_controls"
-        android:layout_marginBottom="30dp"
-        android:orientation="horizontal"
-        android:gravity="center"
-        android:paddingHorizontal="30dp">
-
-        <!-- Кнопка "Отклонить" (красная) -->
+        <!-- Кнопка "Видео" -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:orientation="vertical"
-            android:gravity="center"
-            android:layout_marginEnd="20dp">
+            android:gravity="center">
 
             <ImageButton
-                android:id="@+id/btn_decline"
-                android:layout_width="72dp"
-                android:layout_height="72dp"
-                android:src="@android:drawable/ic_menu_close_clear_cancel"
+                android:id="@+id/btn_video"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:src="@drawable/ic_video_call"
+                android:background="@drawable/circle_button_bg"
+                android:contentDescription="Видео"
+                app:tint="#FFFFFF" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Видео"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Кнопка "Завершить" (красная) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <ImageButton
+                android:id="@+id/btn_end_call"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:src="@drawable/ic_call"
                 android:background="@drawable/decline_button_bg"
-                android:tint="#FFFFFF"
-                android:contentDescription="Отклонить" />
+                android:contentDescription="Завершить"
+                app:tint="#FFFFFF" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Отклонить"
+                android:text="Завершить"
                 android:textColor="#FFFFFF"
-                android:textSize="14sp" />
+                android:textSize="12sp" />
         </LinearLayout>
 
-        <!-- Кнопка "Ответить" (зелёная) -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:layout_marginStart="20dp">
-
-            <ImageButton
-                android:id="@+id/btn_answer"
-                android:layout_width="72dp"
-                android:layout_height="72dp"
-                android:src="@android:drawable/ic_menu_call"
-                android:background="@drawable/answer_button_bg"
-                android:tint="#FFFFFF"
-                android:contentDescription="Ответить" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Ответить"
-                android:textColor="#FFFFFF"
-                android:textSize="14sp" />
-        </LinearLayout>
     </LinearLayout>
 
-    <!-- Текст "Проведите вверх, чтобы ответить" -->
-    <TextView
-        android:id="@+id/swipe_hint"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_above="@id/answer_decline_buttons"
-        android:layout_centerHorizontal="true"
-        android:layout_marginBottom="20dp"
-        android:text="Проведите вверх, чтобы ответить"
-        android:textColor="#80FFFFFF"
-        android:textSize="13sp"
-        android:visibility="gone" />
+    <!-- Видеопревью (для видеозвонков - показывается поверх всего) -->
+    <FrameLayout
+        android:id="@+id/video_preview_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <!-- Видео собеседника (на весь экран) -->
+        <SurfaceView
+            android:id="@+id/remote_video_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- Своё видео (маленькое окно в углу) -->
+        <FrameLayout
+            android:id="@+id/local_video_container"
+            android:layout_width="120dp"
+            android:layout_height="160dp"
+            android:layout_margin="16dp"
+            android:layout_gravity="top|end"
+            android:background="#000000"
+            android:visibility="gone">
+
+            <SurfaceView
+                android:id="@+id/local_video_view"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <!-- Рамка вокруг своего видео -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/video_border" />
+
+        </FrameLayout>
+
+        <!-- Кнопки управления поверх видео -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignParentBottom="true"
+            android:layout_marginBottom="20dp"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingHorizontal="20dp"
+            android:layout_gravity="bottom">
+
+            <ImageButton
+                android:id="@+id/btn_video_speaker"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_margin="8dp"
+                android:src="@drawable/ic_speaker"
+                android:background="@drawable/circle_button_bg"
+                app:tint="#FFFFFF" />
+
+            <ImageButton
+                android:id="@+id/btn_video_mute"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_margin="8dp"
+                android:src="@drawable/ic_microphone"
+                android:background="@drawable/circle_button_bg"
+                app:tint="#FFFFFF" />
+
+            <ImageButton
+                android:id="@+id/btn_switch_camera"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_margin="8dp"
+                android:src="@drawable/ic_switch_camera"
+                android:background="@drawable/circle_button_bg"
+                app:tint="#FFFFFF" />
+
+            <ImageButton
+                android:id="@+id/btn_video_end_call"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_margin="8dp"
+                android:src="@drawable/ic_call"
+                android:background="@drawable/decline_button_bg"
+                app:tint="#FFFFFF" />
+
+        </LinearLayout>
+
+    </FrameLayout>
 
 </RelativeLayout>

@@ -3,7 +3,11 @@ package com.example.mytelegram;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.media.AudioManager;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.CountDownTimer;
+import android.os.Handler;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
@@ -21,25 +25,39 @@ public class CallActivity extends AppCompatActivity {
 
     private static final String TAG = "CallActivity";
 
+    // Данные звонка
     private String callId;
     private String roomName;
     private String callerName;
     private String callerId;
     private boolean isVideo;
+    private boolean isOutgoing;
     private String action;
 
+    // UI Components
     private CircleImageView callerAvatar;
     private TextView callerNameText;
     private TextView callStatusText;
-    private ImageButton btnAnswer;
-    private ImageButton btnDecline;
+    private TextView callTimerText;
     private ImageButton btnSpeaker;
     private ImageButton btnMute;
     private ImageButton btnVideo;
+    private ImageButton btnEndCall;
 
+    // Состояния
     private boolean isSpeakerOn = false;
     private boolean isMuted = false;
-    private boolean isVideoOn = false;
+    private boolean isVideoOn = true;
+    private boolean isCallActive = true;
+
+    // Таймер
+    private CountDownTimer callTimer;
+    private long callStartTime;
+    private Handler timerHandler;
+    private Runnable timerRunnable;
+
+    // Audio
+    private AudioManager audioManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,17 +75,20 @@ public class CallActivity extends AppCompatActivity {
         getIntentData();
         setupClickListeners();
         updateUI();
+        startCall();
     }
 
     private void initViews() {
         callerAvatar = findViewById(R.id.caller_avatar);
         callerNameText = findViewById(R.id.caller_name);
         callStatusText = findViewById(R.id.call_status);
-        btnAnswer = findViewById(R.id.btn_answer);
-        btnDecline = findViewById(R.id.btn_decline);
+        callTimerText = findViewById(R.id.call_timer);
         btnSpeaker = findViewById(R.id.btn_speaker);
         btnMute = findViewById(R.id.btn_mute);
         btnVideo = findViewById(R.id.btn_video);
+        btnEndCall = findViewById(R.id.btn_end_call);
+
+        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
     }
 
     private void getIntentData() {
@@ -77,66 +98,123 @@ public class CallActivity extends AppCompatActivity {
         callerName = intent.getStringExtra("caller_name");
         callerId = intent.getStringExtra("caller_id");
         isVideo = intent.getBooleanExtra("is_video", false);
+        isOutgoing = intent.getBooleanExtra("is_outgoing", true);
         action = intent.getStringExtra("action");
-
-        // Если пришли с действием ANSWER — сразу отвечаем
-        if ("ANSWER".equals(action)) {
-            answerCall();
-        }
     }
 
     private void setupClickListeners() {
-        btnAnswer.setOnClickListener(v -> answerCall());
-        btnDecline.setOnClickListener(v -> declineCall());
+        // Кнопка динамика
+        btnSpeaker.setOnClickListener(v -> toggleSpeaker());
 
-        btnSpeaker.setOnClickListener(v -> {
-            isSpeakerOn = !isSpeakerOn;
-            btnSpeaker.setAlpha(isSpeakerOn ? 1.0f : 0.5f);
-            Toast.makeText(this,
-                    isSpeakerOn ? "Динамик включен" : "Динамик выключен",
-                    Toast.LENGTH_SHORT).show();
-            // TODO: AudioManager.setSpeakerphoneOn(isSpeakerOn)
-        });
+        // Кнопка микрофона
+        btnMute.setOnClickListener(v -> toggleMute());
 
-        btnMute.setOnClickListener(v -> {
-            isMuted = !isMuted;
-            btnMute.setAlpha(isMuted ? 1.0f : 0.5f);
-            Toast.makeText(this,
-                    isMuted ? "Микрофон выключен" : "Микрофон включен",
-                    Toast.LENGTH_SHORT).show();
-            // TODO: localAudioTrack.setEnabled(!isMuted)
-        });
+        // Кнопка видео
+        btnVideo.setOnClickListener(v -> toggleVideo());
 
-        btnVideo.setOnClickListener(v -> {
-            if (!isVideo) {
-                Toast.makeText(this, "Это аудиозвонок", Toast.LENGTH_SHORT).show();
-                return;
+        // Кнопка завершения звонка
+        btnEndCall.setOnClickListener(v -> endCall());
+    }
+
+    private void toggleSpeaker() {
+        isSpeakerOn = !isSpeakerOn;
+        btnSpeaker.setAlpha(isSpeakerOn ? 1.0f : 0.5f);
+
+        if (audioManager != null) {
+            if (isSpeakerOn) {
+                audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+                audioManager.setSpeakerphoneOn(true);
+            } else {
+                audioManager.setSpeakerphoneOn(false);
             }
-            isVideoOn = !isVideoOn;
-            btnVideo.setAlpha(isVideoOn ? 1.0f : 0.5f);
-            Toast.makeText(this,
-                    isVideoOn ? "Камера включена" : "Камера выключена",
-                    Toast.LENGTH_SHORT).show();
-            // TODO: localVideoTrack.setEnabled(isVideoOn)
-        });
+        }
+
+        Toast.makeText(this,
+                isSpeakerOn ? "Динамик включен" : "Динамик выключен",
+                Toast.LENGTH_SHORT).show();
+    }
+
+    private void toggleMute() {
+        isMuted = !isMuted;
+        btnMute.setAlpha(isMuted ? 0.5f : 1.0f);
+
+        // TODO: localAudioTrack.setEnabled(!isMuted)
+
+        Toast.makeText(this,
+                isMuted ? "Микрофон выключен" : "Микрофон включен",
+                Toast.LENGTH_SHORT).show();
+    }
+
+    private void toggleVideo() {
+        if (!isVideo) {
+            Toast.makeText(this, "Это аудиозвонок", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        isVideoOn = !isVideoOn;
+        btnVideo.setAlpha(isVideoOn ? 1.0f : 0.5f);
+
+        // TODO: localVideoTrack.setEnabled(isVideoOn)
+
+        Toast.makeText(this,
+                isVideoOn ? "Камера включена" : "Камера выключена",
+                Toast.LENGTH_SHORT).show();
     }
 
     private void updateUI() {
         // Имя звонящего
         callerNameText.setText(callerName != null ? callerName : "Неизвестный");
 
-        // Статус
-        if ("ANSWER".equals(action)) {
-            callStatusText.setText("Соединение...");
-        } else {
-            callStatusText.setText(isVideo ? "Входящий видеозвонок..." : "Входящий звонок...");
-        }
+        // Статус звонка
+        callStatusText.setText("В разговоре");
+        callStatusText.setTextColor(getColor(android.R.color.holo_green_dark));
 
-        // Аватар (загружаем из Firebase или по URL)
+        // Аватар
         loadCallerAvatar();
 
-        // Показываем/скрываем кнопку видео
+        // Показываем кнопку видео только для видеозвонков
         btnVideo.setVisibility(isVideo ? View.VISIBLE : View.GONE);
+
+        // Для видеозвонков показываем подсказку
+        if (isVideo) {
+            Toast.makeText(this, "Видеозвонок начался", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void startCall() {
+        // Убираем уведомление о входящем звонке
+        clearNotification();
+
+        // Запускаем таймер
+        startTimer();
+
+        // TODO: Подключение к WebRTC
+        // WebRTCManager.connect(roomName, isVideo);
+
+        Log.d(TAG, "Звонок начался: " + callId);
+    }
+
+    private void startTimer() {
+        callStartTime = System.currentTimeMillis();
+        timerHandler = new Handler();
+        timerRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (!isCallActive) return;
+
+                long duration = System.currentTimeMillis() - callStartTime;
+                long seconds = duration / 1000;
+                long minutes = seconds / 60;
+                seconds = seconds % 60;
+
+                String timeString = String.format("%02d:%02d", minutes, seconds);
+                if (callTimerText != null) {
+                    callTimerText.setText(timeString);
+                }
+                timerHandler.postDelayed(this, 1000);
+            }
+        };
+        timerHandler.post(timerRunnable);
     }
 
     private void loadCallerAvatar() {
@@ -156,48 +234,43 @@ public class CallActivity extends AppCompatActivity {
                                         .into(callerAvatar);
                             }
                         }
+                    })
+                    .addOnFailureListener(e -> {
+                        Log.e(TAG, "Ошибка загрузки аватара: " + e.getMessage());
                     });
         }
     }
 
-    private void answerCall() {
-        // Убираем уведомление о входящем звонке
+    private void clearNotification() {
         NotificationManager notificationManager =
                 (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (callId != null) {
             notificationManager.cancel(callId.hashCode());
         }
-
-        callStatusText.setText("Соединение...");
-
-        // Меняем видимость кнопок
-        btnAnswer.setVisibility(View.GONE);
-
-        // TODO: Подключение к WebRTC
-        // WebRTCManager.connect(roomName, isVideo);
-
-        Toast.makeText(this, "Подключение к звонку...", Toast.LENGTH_SHORT).show();
     }
 
-    private void declineCall() {
-        // Убираем уведомление
-        NotificationManager notificationManager =
-                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (callId != null) {
-            notificationManager.cancel(callId.hashCode());
+    private void endCall() {
+        isCallActive = false;
+
+        // Останавливаем таймер
+        if (timerHandler != null && timerRunnable != null) {
+            timerHandler.removeCallbacks(timerRunnable);
         }
 
-        // TODO: Отправить на сервер rejectCall(callId)
-        rejectCallOnServer();
+        // Отправляем уведомление о завершении звонка
+        sendCallEndNotification();
 
-        Toast.makeText(this, "Звонок отклонён", Toast.LENGTH_SHORT).show();
+        // TODO: Закрыть WebRTC соединение
+        // WebRTCManager.disconnect();
+
+        Toast.makeText(this, "Звонок завершён", Toast.LENGTH_SHORT).show();
         finish();
     }
 
-    private void rejectCallOnServer() {
+    private void sendCallEndNotification() {
         new Thread(() -> {
             try {
-                java.net.URL url = new java.net.URL("http://192.168.1.45:8000/reject-call");
+                java.net.URL url = new java.net.URL("http://192.168.1.45:8000/send-call-to-user");
                 java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
@@ -206,19 +279,35 @@ public class CallActivity extends AppCompatActivity {
                 conn.setReadTimeout(3000);
 
                 org.json.JSONObject json = new org.json.JSONObject();
+                json.put("user_id", callerId);
+                json.put("caller_id", callerId);
+                json.put("caller_name", callerName);
+                json.put("call_type", "ended");
                 json.put("call_id", callId);
+                json.put("room_name", roomName);
+                json.put("is_video", isVideo);
 
                 java.io.OutputStream os = conn.getOutputStream();
                 os.write(json.toString().getBytes("UTF-8"));
                 os.flush();
                 os.close();
 
-                conn.getResponseCode();
+                int responseCode = conn.getResponseCode();
+                Log.d(TAG, "Уведомление о завершении звонка отправлено. Код: " + responseCode);
                 conn.disconnect();
             } catch (Exception e) {
-                Log.e(TAG, "Ошибка отклонения звонка: " + e.getMessage());
+                Log.e(TAG, "Ошибка отправки уведомления о завершении: " + e.getMessage());
             }
         }).start();
     }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (timerHandler != null && timerRunnable != null) {
+            timerHandler.removeCallbacks(timerRunnable);
+        }
+    }
+
 
 }
