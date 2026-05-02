@@ -17,6 +17,7 @@ import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -32,7 +33,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
     }
 
     public ChatsAdapter(List<Chat> chatList, OnChatClickListener listener) {
-        this.chatList = chatList;
+        this.chatList = chatList != null ? chatList : new ArrayList<>();
         this.onChatClickListener = listener;
         this.usersRef = FirebaseDatabase.getInstance().getReference().child("users");
         this.groupsRef = FirebaseDatabase.getInstance().getReference().child("groups");
@@ -48,7 +49,6 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
 
     @Override
     public void onBindViewHolder(@NonNull ChatViewHolder holder, int position) {
-
         Chat chat = chatList.get(position);
         holder.bind(chat);
 
@@ -69,12 +69,47 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
     }
 
     public void setChats(List<Chat> chats) {
-        this.chatList = chats;
+        this.chatList = chats != null ? chats : new ArrayList<>();
         notifyDataSetChanged();
     }
 
     public List<Chat> getChats() {
         return chatList;
+    }
+
+    /**
+     * Обновляет один чат в списке
+     * @param updatedChat обновленный чат
+     */
+    public void updateChat(Chat updatedChat) {
+        if (updatedChat == null || updatedChat.getChatId() == null) return;
+
+        for (int i = 0; i < chatList.size(); i++) {
+            Chat currentChat = chatList.get(i);
+            if (currentChat != null && updatedChat.getChatId().equals(currentChat.getChatId())) {
+                chatList.set(i, updatedChat);
+                notifyItemChanged(i);
+                break;
+            }
+        }
+    }
+
+    /**
+     * Обновляет счетчик непрочитанных для чата
+     * @param chatId ID чата
+     * @param unreadCount новый счетчик
+     */
+    public void updateUnreadCount(String chatId, int unreadCount) {
+        if (chatId == null) return;
+
+        for (int i = 0; i < chatList.size(); i++) {
+            Chat chat = chatList.get(i);
+            if (chat != null && chatId.equals(chat.getChatId())) {
+                chat.setUnreadCount(unreadCount);
+                notifyItemChanged(i);
+                break;
+            }
+        }
     }
 
     class ChatViewHolder extends RecyclerView.ViewHolder {
@@ -121,13 +156,29 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
                 if (groupIcon != null) {
                     groupIcon.setVisibility(View.VISIBLE);
                 }
-                loadGroupInfo(chat.getGroupId());
+                // Если есть сохраненное имя группы, используем его
+                if (chat.getGroupName() != null && !chat.getGroupName().isEmpty()) {
+                    textViewUserName.setText(chat.getGroupName());
+                    loadGroupAvatar(chat.getGroupId());
+                } else {
+                    loadGroupInfo(chat.getGroupId());
+                }
             } else {
                 // Личный чат
                 if (groupIcon != null) {
                     groupIcon.setVisibility(View.GONE);
                 }
-                loadUserInfo(chat.getParticipantId());
+                // Если есть сохраненное имя пользователя, используем его
+                if (chat.getParticipantName() != null && !chat.getParticipantName().isEmpty()) {
+                    textViewUserName.setText(chat.getParticipantName());
+                    if (chat.getParticipantAvatar() != null && !chat.getParticipantAvatar().isEmpty()) {
+                        loadAvatarFromUrl(chat.getParticipantAvatar());
+                    } else {
+                        loadUserAvatar(chat.getParticipantId());
+                    }
+                } else {
+                    loadUserInfo(chat.getParticipantId());
+                }
             }
         }
 
@@ -141,24 +192,17 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
                 @Override
                 public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
                     if (dataSnapshot.exists()) {
-                        // Название группы
                         String groupName = dataSnapshot.child("name").getValue(String.class);
                         if (groupName == null) {
                             groupName = "Группа";
                         }
                         textViewUserName.setText(groupName);
 
-                        // Аватар группы
                         String avatarUrl = dataSnapshot.child("avatarUrl").getValue(String.class);
                         if (avatarUrl != null && !avatarUrl.isEmpty()) {
-                            Glide.with(itemView.getContext())
-                                    .load(avatarUrl)
-                                    .placeholder(R.drawable.ic_person)
-                                    .error(R.drawable.ic_person)
-                                    .circleCrop()
-                                    .into(imageViewAvatar);
+                            loadAvatarFromUrl(avatarUrl);
                         } else {
-                            imageViewAvatar.setImageResource(R.drawable.ic_person);
+                            setDefaultAvatar();
                         }
                     } else {
                         setDefaultGroupInfo();
@@ -168,6 +212,30 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
                 @Override
                 public void onCancelled(@NonNull DatabaseError databaseError) {
                     setDefaultGroupInfo();
+                }
+            });
+        }
+
+        private void loadGroupAvatar(String groupId) {
+            if (groupId == null || groupId.isEmpty()) {
+                setDefaultAvatar();
+                return;
+            }
+
+            groupsRef.child(groupId).child("avatarUrl").addListenerForSingleValueEvent(new ValueEventListener() {
+                @Override
+                public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                    String avatarUrl = dataSnapshot.getValue(String.class);
+                    if (avatarUrl != null && !avatarUrl.isEmpty()) {
+                        loadAvatarFromUrl(avatarUrl);
+                    } else {
+                        setDefaultAvatar();
+                    }
+                }
+
+                @Override
+                public void onCancelled(@NonNull DatabaseError error) {
+                    setDefaultAvatar();
                 }
             });
         }
@@ -182,7 +250,6 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
                 @Override
                 public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
                     if (dataSnapshot.exists()) {
-                        // Получаем имя пользователя
                         String userName = dataSnapshot.child("username").getValue(String.class);
                         if (userName == null) {
                             userName = dataSnapshot.child("name").getValue(String.class);
@@ -191,8 +258,6 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
                             userName = "Пользователь";
                         }
                         textViewUserName.setText(userName);
-
-                        // Загружаем аватар
                         loadUserAvatar(userId);
                     } else {
                         setDefaultUserInfo();
@@ -217,12 +282,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
                     if (dataSnapshot.exists()) {
                         String avatarUrl = dataSnapshot.getValue(String.class);
                         if (avatarUrl != null && !avatarUrl.isEmpty()) {
-                            Glide.with(itemView.getContext())
-                                    .load(avatarUrl)
-                                    .placeholder(R.drawable.ic_person)
-                                    .error(R.drawable.ic_person)
-                                    .circleCrop()
-                                    .into(imageViewAvatar);
+                            loadAvatarFromUrl(avatarUrl);
                         } else {
                             setDefaultAvatar();
                         }
@@ -238,14 +298,28 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
             });
         }
 
+        private void loadAvatarFromUrl(String avatarUrl) {
+            if (avatarUrl == null || avatarUrl.isEmpty()) {
+                setDefaultAvatar();
+                return;
+            }
+
+            Glide.with(itemView.getContext())
+                    .load(avatarUrl)
+                    .placeholder(R.drawable.ic_person)
+                    .error(R.drawable.ic_person)
+                    .circleCrop()
+                    .into(imageViewAvatar);
+        }
+
         private void setDefaultUserInfo() {
-            textViewUserName.setText("Неизвестный пользователь");
+            textViewUserName.setText("Пользователь");
             setDefaultAvatar();
         }
 
         private void setDefaultGroupInfo() {
             textViewUserName.setText("Группа");
-            imageViewAvatar.setImageResource(R.drawable.ic_person);
+            setDefaultAvatar();
         }
 
         private void setDefaultAvatar() {

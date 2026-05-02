@@ -72,6 +72,12 @@ public class HomeFragment extends Fragment {
     // Временное хранение chatId для обновления после возврата из чата
     private String pendingRefreshChatId = null;
 
+    // Флаг, что данные уже загружены
+    private boolean dataLoaded = false;
+
+    // Кэш непрочитанных сообщений для быстрого доступа
+    private final Map<String, Integer> unreadCountCache = new HashMap<>();
+
     private static class GroupInfo {
         String name;
         String avatarUrl;
@@ -102,7 +108,10 @@ public class HomeFragment extends Fragment {
         progressBar = view.findViewById(R.id.progressBar);
         setupRecyclerView();
         setupSwipeToDelete();
-        loadGroupsThenChats();
+
+        if (!dataLoaded) {
+            loadGroupsThenChats();
+        }
     }
 
     // --- Swipe to delete ---
@@ -256,14 +265,16 @@ public class HomeFragment extends Fragment {
 
                     loadLastMessageInfo(chatSnapshot, chat);
 
-                    // Проверяем членство в группе для групповых чатов
                     if (chat.isGroupChat()) {
                         checkGroupMembership(chatId, chat);
                     } else {
                         loadedChats.put(chatId, chat);
+                        // Сохраняем в кэш
+                        unreadCountCache.put(chatId, chat.getUnreadCount());
                     }
                 }
 
+                dataLoaded = true;
                 updateAdapter();
                 showLoading(false);
             }
@@ -278,17 +289,13 @@ public class HomeFragment extends Fragment {
         databaseReference.child("chats").addValueEventListener(chatsListener);
     }
 
-
-    // Проверка, что пользователь всё ещё участник группы
     private void checkGroupMembership(String chatId, Chat chat) {
         String groupId = chat.getGroupId();
         if (TextUtils.isEmpty(groupId)) {
-            // Если groupId нет, ищем в мапе
             groupId = chatIdToGroupId.get(chatId);
         }
 
         if (TextUtils.isEmpty(groupId)) {
-            // Не можем проверить - всё равно показываем
             addToLoadedChats(chatId, chat);
             return;
         }
@@ -300,18 +307,17 @@ public class HomeFragment extends Fragment {
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         Boolean isMember = snapshot.getValue(Boolean.class);
                         if (isMember != null && isMember) {
-                            // Пользователь всё ещё в группе
                             addToLoadedChats(chatId, chat);
+                            unreadCountCache.put(chatId, chat.getUnreadCount());
                         } else {
-                            // Пользователь удален из группы - не показываем чат
-                            Log.d(TAG, "User removed from group: " + finalGroupId + ", chat: " + chatId);
+                            Log.d(TAG, "User removed from group: " + finalGroupId);
                         }
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
-                        // При ошибке всё равно показываем
                         addToLoadedChats(chatId, chat);
+                        unreadCountCache.put(chatId, chat.getUnreadCount());
                     }
                 });
     }
@@ -355,11 +361,9 @@ public class HomeFragment extends Fragment {
                 });
     }
 
-    // --- Онлайн-статус ---
     private void startOnlineListener(String userId, Chat chat) {
         if (TextUtils.isEmpty(userId)) return;
 
-        // Удаляем предыдущий слушатель для этого пользователя, если был
         ValueEventListener old = onlineListeners.remove(userId);
         if (old != null) {
             databaseReference.child("users").child(userId).child("online")
@@ -371,13 +375,11 @@ public class HomeFragment extends Fragment {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 Boolean online = snapshot.getValue(Boolean.class);
                 chat.setOnline(online != null && online);
-                updateAdapter();   // обновим UI
+                updateSingleChat(chat);
             }
 
             @Override
-            public void onCancelled(@NonNull DatabaseError error) {
-                Log.e(TAG, "Online listener cancelled for " + userId);
-            }
+            public void onCancelled(@NonNull DatabaseError error) {}
         };
 
         onlineListeners.put(userId, listener);
@@ -385,7 +387,15 @@ public class HomeFragment extends Fragment {
                 .addValueEventListener(listener);
     }
 
-    // --- Последнее сообщение и непрочитанные ---
+    // Обновление одного чата в адаптере
+    private void updateSingleChat(Chat updatedChat) {
+        if (adapter != null) {
+            adapter.updateChat(updatedChat);
+        }
+    }
+
+
+
     private void loadLastMessageInfo(DataSnapshot chatSnapshot, Chat chat) {
         String lastMessage = "Нет сообщений";
         long lastTimestamp = 0;
@@ -395,10 +405,26 @@ public class HomeFragment extends Fragment {
 
         DataSnapshot messagesNode = chatSnapshot.child("messages");
         if (messagesNode.exists()) {
+            // Собираем все сообщения для правильного подсчета
+            List<Map<String, Object>> allMessages = new ArrayList<>();
             for (DataSnapshot msgSnap : messagesNode.getChildren()) {
                 Map<String, Object> data = getMessageDataSafely(msgSnap);
-                if (data == null) continue;
+                if (data != null) {
+                    allMessages.add(data);
+                }
+            }
 
+            // Сортируем по времени
+            allMessages.sort((m1, m2) -> {
+                Long ts1 = safeCastToLong(m1.get("timestamp"));
+                Long ts2 = safeCastToLong(m2.get("timestamp"));
+                if (ts1 == null) return 1;
+                if (ts2 == null) return -1;
+                return ts1.compareTo(ts2);
+            });
+
+            // Проходим по всем сообщениям
+            for (Map<String, Object> data : allMessages) {
                 String messageText = safeCastToString(data.get("text"));
                 Long ts = safeCastToLong(data.get("timestamp"));
                 String senderId = safeCastToString(data.get("senderId"));
@@ -412,6 +438,7 @@ public class HomeFragment extends Fragment {
                     lastMessageType = msgType != null ? msgType : "text";
                 }
 
+                // Подсчет непрочитанных сообщений от других пользователей
                 if (senderId != null && !senderId.equals(currentUserId)) {
                     if (!checkMessageReadStatus(data, currentUserId)) {
                         unreadCount++;
@@ -436,7 +463,6 @@ public class HomeFragment extends Fragment {
             Object value = snapshot.getValue();
             return (value instanceof Map) ? (Map<String, Object>) value : null;
         } catch (ClassCastException e) {
-            Log.e(TAG, "Message cast error: " + snapshot.getKey(), e);
             return null;
         }
     }
@@ -461,7 +487,6 @@ public class HomeFragment extends Fragment {
         return isRead instanceof Boolean && (Boolean) isRead;
     }
 
-    // --- Удаление ---
     private void showDeleteDialog(Chat chat, int position) {
         String name = chat.isGroupChat() ? chat.getGroupName() : chat.getParticipantName();
         String message = chat.isGroupChat()
@@ -479,6 +504,7 @@ public class HomeFragment extends Fragment {
     private void deleteChat(Chat chat, int position) {
         String chatId = chat.getChatId();
         loadedChats.remove(chatId);
+        unreadCountCache.remove(chatId);
         List<Chat> currentChats = adapter.getChats();
         if (position < currentChats.size()) {
             currentChats.remove(position);
@@ -497,7 +523,6 @@ public class HomeFragment extends Fragment {
         }
     }
 
-    // --- Открытие чата ---
     private void openChat(Chat chat) {
         Intent intent;
         if (chat.isGroupChat()) {
@@ -520,16 +545,17 @@ public class HomeFragment extends Fragment {
     public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_CODE_OPEN_CHAT && !TextUtils.isEmpty(pendingRefreshChatId)) {
+            // Обнуляем счетчик для этого чата
             Chat chat = loadedChats.get(pendingRefreshChatId);
             if (chat != null) {
-                chat.setUnreadCount(0);   // мгновенный сброс
-                updateAdapter();
+                chat.setUnreadCount(0);
+                unreadCountCache.put(pendingRefreshChatId, 0);
+                updateSingleChat(chat);
             }
             pendingRefreshChatId = null;
         }
     }
 
-    // --- Форматирование ---
     private String getMessageDisplayText(String messageText, String messageType) {
         if (TextUtils.isEmpty(messageType)) {
             return !TextUtils.isEmpty(messageText) ? messageText : "Сообщение";
@@ -572,17 +598,35 @@ public class HomeFragment extends Fragment {
     }
 
     private void updateAdapter() {
+        if (!isAdded() || getActivity() == null) return;
+
         List<Chat> chatList = new ArrayList<>(loadedChats.values());
         Collections.sort(chatList, (c1, c2) -> Long.compare(c2.getTimestamp(), c1.getTimestamp()));
-        adapter.setChats(chatList);
+
+        getActivity().runOnUiThread(() -> {
+            if (adapter != null) {
+                adapter.setChats(chatList);
+            }
+        });
     }
 
     private void showLoading(boolean show) {
         if (getActivity() == null || getActivity().isFinishing()) return;
         getActivity().runOnUiThread(() -> {
-            progressBar.setVisibility(show ? View.VISIBLE : View.GONE);
-            recyclerView.setVisibility(show ? View.GONE : View.VISIBLE);
+            if (progressBar != null && recyclerView != null) {
+                progressBar.setVisibility(show ? View.VISIBLE : View.GONE);
+                recyclerView.setVisibility(show ? View.GONE : View.VISIBLE);
+            }
         });
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Обновляем все чаты при возврате
+        if (dataLoaded) {
+            updateAdapter();
+        }
     }
 
     @Override
@@ -599,5 +643,8 @@ public class HomeFragment extends Fragment {
                     .removeEventListener(entry.getValue());
         }
         onlineListeners.clear();
+        dataLoaded = false;
     }
+
+
 }

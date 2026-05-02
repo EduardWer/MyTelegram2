@@ -64,6 +64,9 @@ import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ServerValue;
 import com.google.firebase.database.ValueEventListener;
+import com.google.firebase.messaging.FirebaseMessaging;
+
+import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -92,6 +95,49 @@ public class ChatActivity extends AppCompatActivity {
     private static final int REQUEST_IMAGE_CAPTURE = 1002;
     private static final int REQUEST_VIDEO_PICK = 1003;
     private static final int REQUEST_DOCUMENT_PICK = 1004;
+
+
+
+
+
+        private static boolean isChatActivityVisible = false;
+        private static String currentChatId = null;
+
+        @Override
+        protected void onResume() {
+            super.onResume();
+            isChatActivityVisible = true;
+            currentChatId = chatId; // Сохраняем ID текущего чата
+        }
+
+        @Override
+        protected void onPause() {
+            super.onPause();
+            isChatActivityVisible = false;
+            currentChatId = null;
+        }
+
+        // Статический метод для проверки
+        public static boolean isVisible() {
+            return isChatActivityVisible;
+        }
+
+        public static String getCurrentChatId() {
+            return currentChatId;
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     // UI элементы
     private LinearLayout editMessageLayout;
@@ -596,34 +642,13 @@ public class ChatActivity extends AppCompatActivity {
 
 
 
-    // Остальные методы...
 
 
 
 
 
-    private void setupMediaPanel() {
-        // Проверяем что View инициализированы
-        if (mediaViewPager == null || mediaTabs == null) {
-            Log.e(TAG, "mediaViewPager or mediaTabs is null");
-            return;
-        }
 
-        MediaPagerAdapter pagerAdapter = new MediaPagerAdapter(this);
-        mediaViewPager.setAdapter(pagerAdapter);
 
-        new com.google.android.material.tabs.TabLayoutMediator(
-                mediaTabs,
-                mediaViewPager,
-                (tab, position) -> {
-                    if (position == 0) {
-                        tab.setText("Галерея");
-                    } else {
-                        tab.setText("Документы");
-                    }
-                }
-        ).attach();
-    }
 
     // Диалог удаления сообщения
     private void showDeleteMessageDialog(Message message) {
@@ -675,31 +700,7 @@ public class ChatActivity extends AppCompatActivity {
 
 
 
-    private void showAttachmentDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Прикрепить файл");
 
-        String[] options = {"📷 Фото из галереи", "📸 Сделать фото", "🎥 Видео", "📄 Документ"};
-        builder.setItems(options, (dialog, which) -> {
-            switch (which) {
-                case 0:
-                    pickImageFromGallery();
-                    break;
-                case 1:
-                    takePhoto();
-                    break;
-                case 2:
-                    pickVideo();
-                    break;
-                case 3:
-                    pickDocument();
-                    break;
-            }
-        });
-
-        builder.setNegativeButton("Отмена", null);
-        builder.show();
-    }
 
     private void pickImageFromGallery() {
         Intent intent = new Intent(Intent.ACTION_PICK);
@@ -1308,6 +1309,9 @@ public class ChatActivity extends AppCompatActivity {
                 .addOnSuccessListener(aVoid -> {
                     messageEditText.setText("");
                     updateLastMessageInfo(text, "text");
+
+                    // ОТПРАВЛЯЕМ PUSH ЧЕРЕЗ API CLIENT
+                    sendPushViaApiClient(text, messageId);
                 })
                 .addOnFailureListener(e -> {
                     Log.e(TAG, "Ошибка отправки сообщения: " + e.getMessage());
@@ -1315,6 +1319,118 @@ public class ChatActivity extends AppCompatActivity {
                     removeMessageById(messageId);
                 });
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+    private void sendPushViaApiClient(String messageText, String messageId) {
+        DatabaseReference userRef = FirebaseDatabase.getInstance()
+                .getReference("users")
+                .child(recipientId);
+
+        Log.d(TAG, "Поиск токена по пути: users/" + recipientId + "/fcmTokens");
+
+        // Получаем значение fcmTokens как строку
+        userRef.child("fcmTokens").addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                String fcmToken = snapshot.getValue(String.class);
+
+                Log.d(TAG, "Snapshot exists: " + snapshot.exists());
+                Log.d(TAG, "FCM токен: " + (fcmToken != null ? fcmToken.substring(0, Math.min(30, fcmToken.length())) : "null"));
+
+                if (fcmToken != null && !fcmToken.isEmpty() && !fcmToken.equals("true")) {
+                    // Получаем имя отправителя из Firebase
+                    DatabaseReference senderRef = FirebaseDatabase.getInstance()
+                            .getReference("users")
+                            .child(currentUserId);
+
+                    senderRef.addListenerForSingleValueEvent(new ValueEventListener() {
+                        @Override
+                        public void onDataChange(@NonNull DataSnapshot senderSnapshot) {
+                            String senderName = "Пользователь";
+
+                            if (senderSnapshot.exists()) {
+                                // Получаем username из Firebase
+                                if (senderSnapshot.child("username").exists()) {
+                                    senderName = senderSnapshot.child("username").getValue(String.class);
+                                } else if (senderSnapshot.child("name").exists()) {
+                                    senderName = senderSnapshot.child("name").getValue(String.class);
+                                } else if (senderSnapshot.child("displayName").exists()) {
+                                    senderName = senderSnapshot.child("displayName").getValue(String.class);
+                                }
+
+                                Log.d(TAG, "Имя отправителя из Firebase: " + senderName);
+                            }
+
+                            Log.d(TAG, "✅ Отправка push на токен: " + fcmToken.substring(0, Math.min(30, fcmToken.length())) + "...");
+
+                            // Отправляем push с полученным именем
+                            ApiClient.sendPush(
+                                    fcmToken,           // FCM токен ПОЛУЧАТЕЛЯ
+                                    senderName,         // Имя отправителя (строка!)
+                                    messageText,        // Текст сообщения
+                                    chatId,             // ID чата
+                                    messageId,          // ID сообщения
+                                    currentUserId       // ID отправителя
+                            );
+
+                            Toast.makeText(ChatActivity.this, "Уведомление отправлено", Toast.LENGTH_SHORT).show();
+                        }
+
+                        @Override
+                        public void onCancelled(@NonNull DatabaseError error) {
+                            Log.e(TAG, "Ошибка получения имени: " + error.getMessage());
+
+                            // Отправляем с именем по умолчанию
+                            ApiClient.sendPush(
+                                    fcmToken,
+                                    "Пользователь",
+                                    messageText,
+                                    chatId,
+                                    messageId,
+                                    currentUserId
+                            );
+                        }
+                    });
+                } else {
+                    Log.e(TAG, "❌ Нет валидного токена у пользователя");
+                    Toast.makeText(ChatActivity.this, "У получателя нет активных устройств", Toast.LENGTH_SHORT).show();
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "Ошибка получения токена: " + error.getMessage());
+            }
+        });
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     private void addNewMessage(Message message) {
         if (messagePositions.containsKey(message.getId())) {
@@ -2400,4 +2516,8 @@ public class ChatActivity extends AppCompatActivity {
             }
         }
     }
+
+
+
+
 }

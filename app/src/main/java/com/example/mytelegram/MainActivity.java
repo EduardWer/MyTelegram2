@@ -4,9 +4,9 @@ import android.Manifest;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
@@ -42,7 +42,6 @@ public class MainActivity extends AppCompatActivity {
     private static final int PERMISSION_REQUEST_CODE = 100;
 
     private User currentUser;
-
     private String currentUserId;
     private AppBarConfiguration mAppBarConfiguration;
     private ActivityMainBinding binding;
@@ -69,6 +68,12 @@ public class MainActivity extends AppCompatActivity {
             startActivity(intent);
         });
 
+
+
+        // Создаём каналы уведомлений (включая канал для звонков с рингтоном)
+        CallNotificationManager callNotificationManager = new CallNotificationManager(this);
+        callNotificationManager.createNotificationChannels();
+
         // Инициализация навигации с задержкой
         setupNavigationWithDelay();
 
@@ -77,7 +82,7 @@ public class MainActivity extends AppCompatActivity {
 
         setupAvatarClick();
 
-        // Настройка Firebase Messaging
+        // Настройка FCM (получение и отправка токена)
         setupFirebaseMessaging();
     }
 
@@ -89,24 +94,19 @@ public class MainActivity extends AppCompatActivity {
         if (currentFirebaseUser != null) {
             currentUserId = currentFirebaseUser.getUid();
         } else {
-            currentUserId = "vLkUH1cFOrTt63pUHPXtNRfRhbu1"; // fallback, если пользователь не авторизован
+            currentUserId = "vLkUH1cFOrTt63pUHPXtNRfRhbu1";
         }
 
-        // Настройка автоматического офлайна при обрыве соединения
+        // Автоматический офлайн при обрыве соединения
         DatabaseReference onlineRef = databaseReference
                 .child("users").child(currentUserId).child("online");
         onlineRef.onDisconnect().setValue(false);
-        // Явно ставим онлайн сейчас
         onlineRef.setValue(true).addOnFailureListener(e ->
-                Log.e(TAG, "Ошибка установки онлайн-статуса при запуске", e));
+                Log.e(TAG, "Ошибка установки онлайн-статуса", e));
     }
 
-
-
     private void checkAndRequestPermissions() {
-        // Проверяем разрешения для Android 6.0+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            // Проверяем разрешения для файлов
             if (ContextCompat.checkSelfPermission(this,
                     Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(
@@ -118,7 +118,6 @@ public class MainActivity extends AppCompatActivity {
                 );
             }
 
-            // Для Android 13+ (API 33) проверяем разрешение на уведомления
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 checkAndRequestNotificationPermission();
             }
@@ -128,16 +127,12 @@ public class MainActivity extends AppCompatActivity {
     private void checkAndRequestNotificationPermission() {
         if (ContextCompat.checkSelfPermission(this,
                 Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-            // Разрешение уже есть
             Log.d(TAG, "Разрешение на уведомления уже предоставлено");
         } else {
-            // Показываем объяснение, если нужно
             if (ActivityCompat.shouldShowRequestPermissionRationale(this,
                     Manifest.permission.POST_NOTIFICATIONS)) {
-
                 showNotificationPermissionExplanation();
             } else {
-                // Сразу запрашиваем разрешение
                 requestNotificationPermission();
             }
         }
@@ -146,10 +141,8 @@ public class MainActivity extends AppCompatActivity {
     private void showNotificationPermissionExplanation() {
         new AlertDialog.Builder(this)
                 .setTitle("Разрешение на уведомления")
-                .setMessage("Для получения уведомлений о новых сообщениях необходимо предоставить разрешение.")
-                .setPositiveButton("Разрешить", (dialog, which) -> {
-                    requestNotificationPermission();
-                })
+                .setMessage("Для получения уведомлений о новых сообщениях и звонках необходимо предоставить разрешение.")
+                .setPositiveButton("Разрешить", (dialog, which) -> requestNotificationPermission())
                 .setNegativeButton("Позже", null)
                 .show();
     }
@@ -160,21 +153,27 @@ public class MainActivity extends AppCompatActivity {
                 PERMISSION_NOTIFICATION_REQUEST_CODE);
     }
 
+    // ==================== FCM ====================
+
     private void setupFirebaseMessaging() {
+        // Получаем FCM-токен
         FirebaseMessaging.getInstance().getToken()
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful() && task.getResult() != null) {
                         String token = task.getResult();
                         Log.d(TAG, "FCM Token получен: " + token);
 
-                        // Сохраняем токен в базу данных
+                        // 1. Сохраняем в Firebase Database
                         saveFcmTokenToDatabase(token);
+
+                        // 2. Отправляем на наш Python-сервер
+                        //sendTokenToPushServer(token);
                     } else {
                         Log.e(TAG, "Не удалось получить FCM токен", task.getException());
                     }
                 });
 
-        // Подписываемся на тему для отладки
+        // Подписка на тестовую тему
         FirebaseMessaging.getInstance().subscribeToTopic("test")
                 .addOnCompleteListener(task -> {
                     if (task.isSuccessful()) {
@@ -187,16 +186,21 @@ public class MainActivity extends AppCompatActivity {
         FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
         if (currentUser != null) {
             String userId = currentUser.getUid();
+
+            // Сохраняем в /users/{uid}/fcmTokens/{token}: true
             databaseReference.child("users").child(userId)
-                    .child("fcmToken").setValue(token)
-                    .addOnSuccessListener(aVoid -> {
-                        Log.d(TAG, "FCM токен сохранен в базу данных");
-                    })
-                    .addOnFailureListener(e -> {
-                        Log.e(TAG, "Ошибка сохранения FCM токена", e);
-                    });
+                    .child("fcmTokens").setValue(token)
+                    .addOnSuccessListener(aVoid ->
+                            Log.d(TAG, "FCM токен сохранён в Firebase"))
+                    .addOnFailureListener(e ->
+                            Log.e(TAG, "Ошибка сохранения FCM токена", e));
         }
     }
+
+
+
+
+    // ==================== PERMISSIONS RESULT ====================
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
@@ -209,27 +213,19 @@ public class MainActivity extends AppCompatActivity {
             } else {
                 Toast.makeText(this, "Разрешения необходимы для работы с файлами", Toast.LENGTH_LONG).show();
             }
-        }
-        else if (requestCode == PERMISSION_NOTIFICATION_REQUEST_CODE) {
+        } else if (requestCode == PERMISSION_NOTIFICATION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                // Разрешение предоставлено
                 Log.d(TAG, "Разрешение на уведомления предоставлено");
                 Toast.makeText(this, "Уведомления включены", Toast.LENGTH_SHORT).show();
-
-                // Теперь можно настроить FCM
                 setupFirebaseMessaging();
             } else {
-                // Разрешение отклонено
                 Log.w(TAG, "Разрешение на уведомления отклонено");
-                Toast.makeText(this,
-                        "Вы не будете получать уведомления о новых сообщениях",
-                        Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Вы не будете получать уведомления", Toast.LENGTH_LONG).show();
             }
         }
     }
 
-
-
+    // ==================== LIFECYCLE ====================
 
     @Override
     protected void onStart() {
@@ -242,6 +238,8 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         loadAvatarForNavHeader();
     }
+
+    // ==================== NAVIGATION ====================
 
     private void setupNavigationWithDelay() {
         binding.getRoot().post(() -> {
@@ -274,11 +272,11 @@ public class MainActivity extends AppCompatActivity {
                 drawer.closeDrawer(GravityCompat.START);
             }
 
-            if (id == R.id.userProfileActivity2){
+            if (id == R.id.userProfileActivity2) {
                 openProfileActivity();
                 return true;
             }
-            if (id == R.id.Saves){
+            if (id == R.id.Saves) {
                 openSavedMessages();
                 return true;
             }
@@ -304,10 +302,11 @@ public class MainActivity extends AppCompatActivity {
         startActivity(intent);
     }
 
+    // ==================== AVATAR ====================
+
     private void setupAvatarClick() {
         View headerView = binding.navView.getHeaderView(0);
         if (headerView == null) return;
-
         ImageView navAvatar = headerView.findViewById(R.id.imageView);
         if (navAvatar != null) {
             navAvatar.setOnClickListener(v -> openProfileActivity());
@@ -317,7 +316,6 @@ public class MainActivity extends AppCompatActivity {
     private void loadAvatarForNavHeader() {
         FirebaseUser currentFirebaseUser = firebaseAuth.getCurrentUser();
         if (currentFirebaseUser == null) {
-            Log.e(TAG, "Пользователь не авторизован");
             setDefaultAvatarInNavHeader();
             return;
         }
@@ -351,10 +349,8 @@ public class MainActivity extends AppCompatActivity {
     private void updateAvatarInNavHeader(String avatarUrl) {
         runOnUiThread(() -> {
             if (isDestroyed()) return;
-
             View headerView = binding.navView.getHeaderView(0);
             if (headerView == null) return;
-
             ImageView navAvatar = headerView.findViewById(R.id.imageView);
             if (navAvatar != null) {
                 Glide.with(MainActivity.this)
@@ -370,16 +366,16 @@ public class MainActivity extends AppCompatActivity {
     private void setDefaultAvatarInNavHeader() {
         runOnUiThread(() -> {
             if (isDestroyed()) return;
-
             View headerView = binding.navView.getHeaderView(0);
             if (headerView == null) return;
-
             ImageView navAvatar = headerView.findViewById(R.id.imageView);
             if (navAvatar != null) {
                 navAvatar.setImageResource(R.drawable.ic_person);
             }
         });
     }
+
+    // ==================== USER DATA ====================
 
     private void handleUserData() {
         currentUser = getIntent().getParcelableExtra("user_data");
@@ -405,6 +401,8 @@ public class MainActivity extends AppCompatActivity {
 
         loadAvatarForNavHeader();
     }
+
+    // ==================== NAVIGATE UP ====================
 
     @Override
     public boolean onSupportNavigateUp() {

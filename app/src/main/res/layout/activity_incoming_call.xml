@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#1A1A2E">
+
+    <!-- Размытый фон -->
+    <ImageView
+        android:id="@+id/background_avatar"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:alpha="0.4"
+        android:src="@drawable/ic_person" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#80000000" />
+
+    <!-- Основной контент -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingTop="80dp">
+
+        <!-- Пространство сверху -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- Аватар -->
+        <de.hdodenhof.circleimageview.CircleImageView
+            android:id="@+id/caller_avatar"
+            android:layout_width="110dp"
+            android:layout_height="110dp"
+            android:src="@drawable/ic_person"
+            app:civ_border_width="0dp" />
+
+        <!-- Имя -->
+        <TextView
+            android:id="@+id/caller_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Иван Петров"
+            android:textColor="#FFFFFF"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:fontFamily="sans-serif-medium" />
+
+        <!-- Username -->
+        <TextView
+            android:id="@+id/caller_username"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@username"
+            android:textColor="#90FFFFFF"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <!-- Статус -->
+        <TextView
+            android:id="@+id/call_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="Входящий звонок"
+            android:textColor="#80FFFFFF"
+            android:textSize="15sp" />
+
+        <!-- Пространство перед кнопками -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- Кнопки -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="60dp"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingHorizontal="40dp">
+
+            <!-- Кнопка "Отклонить" -->
+            <FrameLayout
+                android:id="@+id/btn_decline"
+                android:layout_width="70dp"
+                android:layout_height="70dp"
+                android:layout_marginEnd="50dp"
+                android:background="@drawable/decline_button_bg"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:id="@+id/btn_decline_icon"
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:layout_gravity="center"
+                    android:src="@android:drawable/ic_menu_close_clear_cancel"
+                    app:tint="#FFFFFF" />
+            </FrameLayout>
+
+            <!-- Кнопка "Принять" -->
+            <FrameLayout
+                android:id="@+id/btn_answer"
+                android:layout_width="70dp"
+                android:layout_height="70dp"
+                android:layout_marginStart="50dp"
+                android:background="@drawable/answer_button_bg"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:id="@+id/btn_answer_icon"
+                    android:layout_width="35dp"
+                    android:layout_height="35dp"
+                    android:layout_gravity="center"
+                    android:src="@android:drawable/ic_menu_call"
+                    app:tint="#FFFFFF" />
+            </FrameLayout>
+        </LinearLayout>
+
+        <!-- Подсказка -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="30dp"
+            android:text="▲ Принять    Отклонить ▼"
+            android:textColor="#40FFFFFF"
+            android:textSize="12sp" />
+    </LinearLayout>
+</FrameLayout>

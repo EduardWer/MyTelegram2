@@ -4,6 +4,7 @@
     <!-- Базовые разрешения для сети -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" /> <!-- Разрешения для работы с хранилищем -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" /> <!-- Для Android 10-12 (API 29-32) -->
@@ -25,6 +26,7 @@
         android:required="false" />
 
     <application
+
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -33,7 +35,33 @@
         android:roundIcon="@drawable/message_background_received"
         android:supportsRtl="true"
         android:theme="@style/Theme.MyTelegram"
-        tools:targetApi="31">
+        android:usesCleartextTraffic="true"
+        tools:targetApi="31"
+        android:enableOnBackInvokedCallback="false">
+        <activity
+            android:name=".IncomingCallActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar" />
+
+        <service
+            android:name=".MyFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service> <!-- Приёмник действий из уведомления -->
+        <receiver
+            android:name=".CallActionReceiver"
+            android:exported="false" /> <!-- Экран звонка -->
+        <activity
+            android:name=".CallActivity"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
+            android:turnScreenOn="true" />
         <activity
             android:name=".GroupInfoActivity"
             android:exported="false"
@@ -44,6 +72,7 @@
             android:exported="false" />
         <activity
             android:name=".GroupChatActivity"
+            android:launchMode="singleTop"
             android:exported="false"
             android:theme="@style/Theme.MyTelegram.NoActionBar"
             android:windowSoftInputMode="adjustPan|stateHidden" />
@@ -88,6 +117,7 @@
             android:theme="@style/Theme.MyTelegram" /> <!-- Chat Activities -->
         <activity
             android:name=".ChatActivity"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.MyTelegram.NoActionBar"
             android:windowSoftInputMode="adjustPan|stateHidden" />
         <activity
