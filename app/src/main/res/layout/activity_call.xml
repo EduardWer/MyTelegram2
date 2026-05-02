@@ -87,8 +87,8 @@
                 android:layout_height="64dp"
                 android:src="@android:drawable/ic_lock_silent_mode_off"
                 android:background="@drawable/circle_button_bg"
-                android:tint="#FFFFFF"
-                android:contentDescription="Динамик" />
+                android:contentDescription="Динамик"
+                app:tint="#FFFFFF" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -113,8 +113,8 @@
                 android:layout_height="64dp"
                 android:src="@android:drawable/ic_menu_camera"
                 android:background="@drawable/circle_button_bg"
-                android:tint="#FFFFFF"
-                android:contentDescription="Видео" />
+                android:contentDescription="Видео"
+                app:tint="#FFFFFF" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -139,8 +139,8 @@
                 android:layout_height="64dp"
                 android:src="@android:drawable/ic_btn_speak_now"
                 android:background="@drawable/circle_button_bg"
-                android:tint="#FFFFFF"
-                android:contentDescription="Микрофон" />
+                android:contentDescription="Микрофон"
+                app:tint="#FFFFFF" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -178,8 +178,8 @@
                 android:layout_height="72dp"
                 android:src="@android:drawable/ic_menu_close_clear_cancel"
                 android:background="@drawable/decline_button_bg"
-                android:tint="#FFFFFF"
-                android:contentDescription="Отклонить" />
+                android:contentDescription="Отклонить"
+                app:tint="#FFFFFF" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -205,8 +205,8 @@
                 android:layout_height="72dp"
                 android:src="@android:drawable/ic_menu_call"
                 android:background="@drawable/answer_button_bg"
-                android:tint="#FFFFFF"
-                android:contentDescription="Ответить" />
+                android:contentDescription="Ответить"
+                app:tint="#FFFFFF" />
 
             <TextView
                 android:layout_width="wrap_content"

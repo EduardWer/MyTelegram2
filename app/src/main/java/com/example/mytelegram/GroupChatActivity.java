@@ -506,7 +506,7 @@ public class GroupChatActivity extends AppCompatActivity {
 
 
 
-    // Добавьте этот метод в GroupChatActivity (вне адаптера)
+
     void downloadDocument(String fileUrl, String fileName) {
         if (fileUrl == null || fileUrl.isEmpty()) {
             Toast.makeText(this, "Ошибка: неверная ссылка на документ", Toast.LENGTH_SHORT).show();
@@ -550,7 +550,7 @@ public class GroupChatActivity extends AppCompatActivity {
         downloader.downloadPublicDocument("server21", objectKey, finalFileName);
     }
 
-    // Вспомогательные методы
+
     private String extractObjectKeyFromUrl(String url) {
         try {
             Uri uri = Uri.parse(url);
@@ -756,44 +756,139 @@ public class GroupChatActivity extends AppCompatActivity {
         updates.put("timestamp", ServerValue.TIMESTAMP);
         updates.put("lastMessageSenderId", currentUserId);
         updates.put("messageType", messageType);
+
+        // Обновляем для отправителя (счетчик не увеличиваем)
         userChatsRef.child(currentUserId).child(chatId).updateChildren(updates);
 
+        // Обновляем для всех участников группы
         groupRef.child("members").addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 for (DataSnapshot memberSnap : snapshot.getChildren()) {
                     String memberId = memberSnap.getKey();
-                    if (memberId == null || memberId.equals(currentUserId)) continue;
+                    if (memberId == null) continue;
 
-                    userChatsRef.child(memberId).child(chatId).child("lastMessage").setValue(lastMessage);
-                    userChatsRef.child(memberId).child(chatId).child("timestamp").setValue(ServerValue.TIMESTAMP);
-                    userChatsRef.child(memberId).child(chatId).child("lastMessageSenderId").setValue(currentUserId);
-                    userChatsRef.child(memberId).child(chatId).child("messageType").setValue(messageType);
+                    // Для каждого участника обновляем информацию о чате
+                    DatabaseReference memberChatRef = userChatsRef.child(memberId).child(chatId);
 
-                    userChatsRef.child(memberId).child(chatId).child("unreadCount")
-                            .addListenerForSingleValueEvent(new ValueEventListener() {
-                                @Override
-                                public void onDataChange(@NonNull DataSnapshot countSnap) {
-                                    int cur = 0;
-                                    if (countSnap.exists()) {
-                                        Integer count = countSnap.getValue(Integer.class);
-                                        if (count != null) cur = count;
-                                    }
-                                    userChatsRef.child(memberId).child(chatId).child("unreadCount").setValue(cur + 1);
+                    memberChatRef.child("lastMessage").setValue(lastMessage);
+                    memberChatRef.child("timestamp").setValue(ServerValue.TIMESTAMP);
+                    memberChatRef.child("lastMessageSenderId").setValue(currentUserId);
+                    memberChatRef.child("messageType").setValue(messageType);
+
+                    // Увеличиваем счетчик непрочитанных ТОЛЬКО для других участников (не для отправителя)
+                    if (!memberId.equals(currentUserId)) {
+                        memberChatRef.child("unreadCount").addListenerForSingleValueEvent(new ValueEventListener() {
+                            @Override
+                            public void onDataChange(@NonNull DataSnapshot countSnap) {
+                                int cur = 0;
+                                if (countSnap.exists()) {
+                                    Integer count = countSnap.getValue(Integer.class);
+                                    if (count != null) cur = count;
                                 }
+                                memberChatRef.child("unreadCount").setValue(cur + 1);
+                            }
 
-                                @Override
-                                public void onCancelled(@NonNull DatabaseError error) {
-                                    userChatsRef.child(memberId).child(chatId).child("unreadCount").setValue(1);
-                                }
-                            });
+                            @Override
+                            public void onCancelled(@NonNull DatabaseError error) {
+                                memberChatRef.child("unreadCount").setValue(1);
+                            }
+                        });
+                    } else {
+                        // Для отправителя счетчик = 0
+                        memberChatRef.child("unreadCount").setValue(0);
+                    }
                 }
             }
 
             @Override
-            public void onCancelled(@NonNull DatabaseError error) {}
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "Ошибка обновления счетчиков: " + error.getMessage());
+            }
         });
     }
+
+
+    private void markAllMessagesAsRead() {
+        // Обнуляем счетчик непрочитанных для этого чата
+        userChatsRef.child(currentUserId).child(chatId).child("unreadCount").setValue(0)
+                .addOnSuccessListener(aVoid -> Log.d(TAG, "Unread count reset to 0"))
+                .addOnFailureListener(e -> Log.e(TAG, "Failed to reset unread count: " + e.getMessage()));
+
+        // Отмечаем все сообщения как прочитанные в Firebase
+        chatRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                for (DataSnapshot msgSnap : snapshot.getChildren()) {
+                    String senderId = msgSnap.child("senderId").getValue(String.class);
+
+                    if (senderId != null && !senderId.equals(currentUserId)) {
+                        // Проверяем, прочитано ли уже сообщение
+                        boolean alreadyRead = false;
+                        DataSnapshot readBySnapshot = msgSnap.child("readBy").child(currentUserId);
+                        if (readBySnapshot.exists()) {
+                            Boolean read = readBySnapshot.getValue(Boolean.class);
+                            alreadyRead = read != null && read;
+                        }
+
+                        if (!alreadyRead) {
+                            // Отмечаем как прочитанное
+                            Map<String, Object> updates = new HashMap<>();
+                            updates.put("readBy/" + currentUserId, true);
+                            updates.put("isRead", true);
+
+                            msgSnap.getRef().updateChildren(updates)
+                                    .addOnFailureListener(e -> Log.e(TAG, "Failed to mark message as read: " + e.getMessage()));
+                        }
+                    }
+                }
+                Log.d(TAG, "All messages marked as read");
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "Error marking messages as read: " + error.getMessage());
+            }
+        });
+    }
+
+
+
+    private void markVisibleMessagesAsRead() {
+        LinearLayoutManager layoutManager = (LinearLayoutManager) messagesRecyclerView.getLayoutManager();
+        if (layoutManager == null) return;
+
+        int firstVisible = layoutManager.findFirstVisibleItemPosition();
+        int lastVisible = layoutManager.findLastVisibleItemPosition();
+
+        if (firstVisible < 0 || lastVisible < 0) return;
+
+        for (int i = firstVisible; i <= lastVisible; i++) {
+            if (i < messagesList.size()) {
+                Message message = messagesList.get(i);
+                if (!message.getSenderId().equals(currentUserId) && !message.isReadByUser(currentUserId)) {
+                    message.markAsRead(currentUserId);
+
+                    Map<String, Object> updates = new HashMap<>();
+                    updates.put("readBy", message.getReadBy());
+                    updates.put("isRead", message.isRead());
+
+                    chatRef.child(message.getId()).updateChildren(updates);
+                }
+            }
+        }
+    }
+
+    // Вызовите в onCreate после setupRecyclerView
+
+
+    // Вызовите этот метод в onResume
+    @Override
+    protected void onResume() {
+        super.onResume();
+        markAllMessagesAsRead();
+    }
+
 
     private void loadMessages() {
         showLoading(true);

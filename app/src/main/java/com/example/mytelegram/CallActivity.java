@@ -221,13 +221,4 @@ public class CallActivity extends AppCompatActivity {
         }).start();
     }
 
-    @Override
-    public void onBackPressed() {
-        // Не даём выйти назад во время звонка
-        if ("ANSWER".equals(action)) {
-            Toast.makeText(this, "Завершите звонок перед выходом", Toast.LENGTH_SHORT).show();
-        } else {
-            declineCall();
-        }
-    }
 }
