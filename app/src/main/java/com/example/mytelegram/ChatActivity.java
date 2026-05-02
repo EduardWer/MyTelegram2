@@ -722,18 +722,7 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    private void pickVideo() {
-        Intent intent = new Intent(Intent.ACTION_PICK);
-        intent.setType("video/*");
-        startActivityForResult(intent, REQUEST_VIDEO_PICK);
-    }
 
-    public void pickDocument() {
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.setType("*/*");
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        startActivityForResult(intent, REQUEST_DOCUMENT_PICK);
-    }
 
     private void resetBottomSheet() {
         if (bottomSheetBehavior != null) {
@@ -1321,17 +1310,6 @@ public class ChatActivity extends AppCompatActivity {
     }
 
 
-
-
-
-
-
-
-
-
-
-
-
     private void sendPushViaApiClient(String messageText, String messageId) {
         DatabaseReference userRef = FirebaseDatabase.getInstance()
                 .getReference("users")
@@ -1523,6 +1501,8 @@ public class ChatActivity extends AppCompatActivity {
         chatRef.child(messageId).setValue(messageMap)
                 .addOnSuccessListener(aVoid -> {
                     updateLastMessageInfo(messageText,  messageType);
+                    sendPushViaApiClient(messageText,messageId);
+
                 })
                 .addOnFailureListener(e -> {
                     Log.e(TAG, "Ошибка отправки файла: " + e.getMessage());

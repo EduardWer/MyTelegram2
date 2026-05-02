@@ -438,6 +438,17 @@ public class GroupChatActivity extends AppCompatActivity {
         }
     }
 
+
+
+
+
+
+
+
+
+
+
+
     private void sendTextMessage() {
         String text = messageEditText.getText().toString().trim();
         if (TextUtils.isEmpty(text)) {
@@ -485,6 +496,16 @@ public class GroupChatActivity extends AppCompatActivity {
                     removeMessageById(messageId);
                 });
     }
+
+
+
+
+
+
+
+
+
+
 
     private void addNewMessage(Message message) {
         messagesList.add(message);
@@ -853,35 +874,6 @@ public class GroupChatActivity extends AppCompatActivity {
     }
 
 
-
-    private void markVisibleMessagesAsRead() {
-        LinearLayoutManager layoutManager = (LinearLayoutManager) messagesRecyclerView.getLayoutManager();
-        if (layoutManager == null) return;
-
-        int firstVisible = layoutManager.findFirstVisibleItemPosition();
-        int lastVisible = layoutManager.findLastVisibleItemPosition();
-
-        if (firstVisible < 0 || lastVisible < 0) return;
-
-        for (int i = firstVisible; i <= lastVisible; i++) {
-            if (i < messagesList.size()) {
-                Message message = messagesList.get(i);
-                if (!message.getSenderId().equals(currentUserId) && !message.isReadByUser(currentUserId)) {
-                    message.markAsRead(currentUserId);
-
-                    Map<String, Object> updates = new HashMap<>();
-                    updates.put("readBy", message.getReadBy());
-                    updates.put("isRead", message.isRead());
-
-                    chatRef.child(message.getId()).updateChildren(updates);
-                }
-            }
-        }
-    }
-
-    // Вызовите в onCreate после setupRecyclerView
-
-
     // Вызовите этот метод в onResume
     @Override
     protected void onResume() {
@@ -1199,7 +1191,6 @@ public class GroupChatActivity extends AppCompatActivity {
                 });
     }
 
-// Вспомогательные методы для uploadFile:
 
     private File createCompressedImageFile(Uri uri) {
         try {
@@ -1346,6 +1337,21 @@ public class GroupChatActivity extends AppCompatActivity {
         return result;
     }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     private void sendFileMessage(String messageType, String fileUrl, String fileName) {
         String messageId = chatRef.push().getKey();
         if (messageId == null) {
@@ -1396,6 +1402,26 @@ public class GroupChatActivity extends AppCompatActivity {
                     removeMessageById(messageId);
                 });
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     private String getMessageTextForType(String messageType) {
         switch (messageType) {
