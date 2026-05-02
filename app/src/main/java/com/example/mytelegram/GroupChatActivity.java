@@ -82,11 +82,8 @@ import java.util.concurrent.Executors;
 public class GroupChatActivity extends AppCompatActivity {
     private static final String TAG = "GroupChatActivity";
 
-    // Константы для выбора файлов
-    private static final int REQUEST_IMAGE_PICK = 1001;
-    private static final int REQUEST_IMAGE_CAPTURE = 1002;
-    private static final int REQUEST_VIDEO_PICK = 1003;
-    private static final int REQUEST_DOCUMENT_PICK = 1004;
+
+
 
     // UI элементы
     private LinearLayout editMessageLayout;
@@ -486,15 +483,58 @@ public class GroupChatActivity extends AppCompatActivity {
 
         addNewMessage(message);
 
+        final String messageText = text;
+        final String senderName = userNamesCache.containsKey(currentUserId) ?
+                userNamesCache.get(currentUserId) : "Участник";
+        final String finalMessageId = messageId;
+
+
+        final String senderAvatarUrl = getUserAvatarUrl(currentUserId);
+
         chatRef.child(messageId).setValue(messageMap)
                 .addOnSuccessListener(aVoid -> {
                     messageEditText.setText("");
-                    updateLastMessageInfo(text, "text");
+                    updateLastMessageInfo(messageText, "text");
+
+                    // Отправляем push с дополнительной информацией
+                    sendPushToGroupAdvanced(messageText, senderName, finalMessageId, senderAvatarUrl);
                 })
                 .addOnFailureListener(e -> {
                     Log.e(TAG, "Ошибка отправки: " + e.getMessage());
                     removeMessageById(messageId);
+                    Toast.makeText(this, "Ошибка отправки сообщения", Toast.LENGTH_SHORT).show();
                 });
+    }
+
+
+    private void sendPushToGroupAdvanced(String messageText, String senderName,
+                                         String messageId, String senderAvatarUrl) {
+        if (chatId == null || currentUserId == null) {
+            Log.e(TAG, "Ошибка: chatId или currentUserId = null");
+            return;
+        }
+
+        // Обрезаем длинные сообщения
+        String body = messageText.length() > 100 ? messageText.substring(0, 100) + "..." : messageText;
+
+        Log.d(TAG, "Отправка push: group_id=" + chatId + ", title=" + senderName + ", body=" + body);
+
+        // ПРОСТОЙ ВАРИАНТ - используем sendToGroup
+        ApiClient.sendToGroup(
+                groupId,          // group_id - ID группы/чата
+                groupNameStr,      // title - имя отправителя
+                body,            // body - текст сообщения
+                chatId,          // chat_id - ID чата
+                messageId,       // message_id - ID сообщения
+                currentUserId,   // sender_id - ID отправителя
+                true             // exclude_sender - не отправлять себе
+        );
+    }
+
+
+    private String getUserAvatarUrl(String userId) {
+
+        return null;
     }
 
 
@@ -1392,9 +1432,22 @@ public class GroupChatActivity extends AppCompatActivity {
 
         addNewMessage(message);
 
+        // Сохраняем данные для push-уведомления
+        final String finalMessageId = messageId;
+        final String senderName = userNamesCache.containsKey(currentUserId) ?
+                userNamesCache.get(currentUserId) : "Участник";
+        final String finalMessageText = messageText;
+        final String finalFileUrl = fileUrl;
+        final String finalMessageType = messageType;
+        final String finalFileName = fileName;
+
         chatRef.child(messageId).setValue(messageMap)
                 .addOnSuccessListener(aVoid -> {
-                    updateLastMessageInfo(messageText, messageType);
+                    updateLastMessageInfo(finalMessageText, messageType);
+
+                    // ============ ОТПРАВКА PUSH УВЕДОМЛЕНИЯ ============
+                    sendPushForFileMessage(finalMessageText, senderName, finalMessageId,
+                            finalMessageType, finalFileUrl, finalFileName);
                 })
                 .addOnFailureListener(e -> {
                     Log.e(TAG, "Ошибка отправки файла: " + e.getMessage());
@@ -1402,6 +1455,49 @@ public class GroupChatActivity extends AppCompatActivity {
                     removeMessageById(messageId);
                 });
     }
+
+
+    private void sendPushForFileMessage(String messageText, String senderName,
+                                        String messageId, String messageType,
+                                        String fileUrl, String fileName) {
+        if (chatId == null || currentUserId == null) {
+            Log.e(TAG, "Ошибка: chatId или currentUserId = null");
+            return;
+        }
+
+        String title = senderName;
+        String body = messageText;
+
+        Log.d(TAG, "Отправка push для файла: type=" + messageType + ", group_id=" + chatId);
+
+        // Для изображений отправляем с картинкой
+        if (messageType.equals("image")) {
+            ApiClient.sendToGroupWithImage(
+                    groupId,        // group_id
+                    groupNameStr,         // title
+                    body,          // body
+                    chatId,        // chat_id
+                    messageId,     // message_id
+                    currentUserId, // sender_id
+                    fileUrl,       // image_url
+                    true           // exclude_sender
+            );
+        } else {
+            // Для остальных типов файлов
+            ApiClient.sendToGroup(
+                    groupId,        // group_id
+                    groupNameStr,         // title
+                    body,          // body
+                    chatId,        // chat_id
+                    messageId,     // message_id
+                    currentUserId, // sender_id
+                    true           // exclude_sender
+            );
+        }
+    }
+
+
+
 
 
 

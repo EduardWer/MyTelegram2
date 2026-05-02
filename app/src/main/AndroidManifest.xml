@@ -103,9 +103,14 @@
         <activity
             android:name=".GroupChatActivity"
             android:launchMode="singleTop"
-            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:theme="@style/Theme.MyTelegram.NoActionBar"
-            android:windowSoftInputMode="adjustPan|stateHidden" />
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name=".VideoPlayerActivity"
