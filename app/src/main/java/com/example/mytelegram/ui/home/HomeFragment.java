@@ -68,6 +68,8 @@ public class HomeFragment extends Fragment {
 
     // Для онлайн-статуса
     private final Map<String, ValueEventListener> onlineListeners = new HashMap<>();
+    // Для слушателей сообщений в чатах
+    private final Map<String, ValueEventListener> chatMessageListeners = new HashMap<>();
 
     // Временное хранение chatId для обновления после возврата из чата
     private String pendingRefreshChatId = null;
@@ -75,8 +77,8 @@ public class HomeFragment extends Fragment {
     // Флаг, что данные уже загружены
     private boolean dataLoaded = false;
 
-    // Кэш непрочитанных сообщений для быстрого доступа
-    private final Map<String, Integer> unreadCountCache = new HashMap<>();
+    // Кэш уже загруженных пользователей
+    private final Map<String, Boolean> userInfoLoaded = new HashMap<>();
 
     private static class GroupInfo {
         String name;
@@ -195,6 +197,8 @@ public class HomeFragment extends Fragment {
         groupsListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (getActivity() == null || !isAdded()) return;
+
                 groupInfoMap.clear();
                 chatIdToGroupId.clear();
                 for (DataSnapshot groupSnap : snapshot.getChildren()) {
@@ -231,62 +235,278 @@ public class HomeFragment extends Fragment {
         chatsListener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
-                loadedChats.clear();
+                if (getActivity() == null || !isAdded()) return;
+
+                // Сохраняем ID существующих чатов для отслеживания удаленных
+                List<String> existingChatIds = new ArrayList<>(loadedChats.keySet());
 
                 for (DataSnapshot chatSnapshot : dataSnapshot.getChildren()) {
                     String chatId = chatSnapshot.getKey();
                     if (chatId == null) continue;
 
-                    Chat chat = new Chat();
-                    chat.setChatId(chatId);
+                    // Удаляем из списка существующих
+                    existingChatIds.remove(chatId);
+
+                    // Получаем старую версию чата (если есть)
+                    Chat oldChat = loadedChats.get(chatId);
+                    boolean isNewChat = (oldChat == null);
+
+                    Chat chat;
+                    if (isNewChat) {
+                        chat = new Chat();
+                        chat.setChatId(chatId);
+                    } else {
+                        // ИСПРАВЛЕНО: создаем копию, но сохраняем participantId
+                        chat = new Chat();
+                        chat.setChatId(chatId);
+                        chat.setChatType(oldChat.getChatType());
+                        chat.setParticipantId(oldChat.getParticipantId());
+                        chat.setParticipantName(oldChat.getParticipantName());
+                        chat.setParticipantAvatar(oldChat.getParticipantAvatar());
+                        chat.setGroupId(oldChat.getGroupId());
+                        chat.setGroupName(oldChat.getGroupName());
+                        chat.setLastMessage(oldChat.getLastMessage());
+                        chat.setTimestamp(oldChat.getTimestamp());
+                        chat.setUnreadCount(oldChat.getUnreadCount());
+                        chat.setLastMessageSenderId(oldChat.getLastMessageSenderId());
+                        chat.setLastMessageMine(oldChat.isLastMessageMine());
+                        chat.setLastMessageTime(oldChat.getLastMessageTime());
+                        chat.setMessageType(oldChat.getMessageType());
+                        chat.setOnline(oldChat.isOnline());
+                    }
 
                     if (isPersonalChat(chatId)) {
                         chat.setChatType("private");
                         String[] users = chatId.split("_");
                         String participantId = users[0].equals(currentUserId) ? users[1] : users[0];
                         chat.setParticipantId(participantId);
-                        loadParticipantInfo(participantId, chat);
+
+                        // ИСПРАВЛЕНО: загружаем данные пользователя, даже если чат существующий
+                        // потому что данные могли обновиться
+                        if (!userInfoLoaded.containsKey(participantId)) {
+                            loadParticipantInfo(participantId, chat);
+                        } else {
+                            // Если данные уже загружены, берем из кэша
+                            // Нужно реализовать метод getUserFromCache
+                            loadCachedUserInfo(participantId, chat);
+                        }
                         startOnlineListener(participantId, chat);
                     } else {
                         chat.setChatType("group");
                         GroupInfo info = groupInfoMap.get(chatId);
                         if (info != null) {
-                            chat.setGroupName(info.name);
-                            chat.setParticipantName(info.name);
-                            chat.setParticipantAvatar(info.avatarUrl);
-                        } else {
-                            chat.setGroupName("Группа");
-                            chat.setParticipantName("Группа");
-                            chat.setParticipantAvatar("");
+                            if (isNewChat || !info.name.equals(chat.getGroupName())) {
+                                chat.setGroupName(info.name);
+                                chat.setParticipantName(info.name);
+                            }
+                            if (isNewChat || !info.avatarUrl.equals(chat.getParticipantAvatar())) {
+                                chat.setParticipantAvatar(info.avatarUrl);
+                            }
                         }
                         String groupId = chatIdToGroupId.get(chatId);
                         chat.setGroupId(groupId != null ? groupId : "");
                     }
 
-                    loadLastMessageInfo(chatSnapshot, chat);
+                    // Обновляем информацию о последнем сообщении
+                    updateLastMessageInfo(chatSnapshot, chat);
 
                     if (chat.isGroupChat()) {
                         checkGroupMembership(chatId, chat);
-                    } else {
+                    } else if (isNewChat) {
+                        // НОВЫЙ ЧАТ - добавляем
                         loadedChats.put(chatId, chat);
-                        // Сохраняем в кэш
-                        unreadCountCache.put(chatId, chat.getUnreadCount());
+                        startChatMessageListener(chatId);
+                    } else {
+                        // СУЩЕСТВУЮЩИЙ ЧАТ - проверяем изменения
+                        // ИСПРАВЛЕНО: сравниваем со старой версией
+                        if (hasChatChanged(oldChat, chat)) {
+                            loadedChats.put(chatId, chat);
+                            updateSingleChat(chat);
+                        }
+                    }
+                }
+
+                // Удаляем чаты, которых больше нет в Firebase
+                for (String removedChatId : existingChatIds) {
+                    loadedChats.remove(removedChatId);
+                    stopChatMessageListener(removedChatId);
+                    if (adapter != null) {
+                        adapter.removeChatById(removedChatId);
                     }
                 }
 
                 dataLoaded = true;
-                updateAdapter();
+
+                // Обновляем адаптер только если изменилось количество чатов
+                if (!existingChatIds.isEmpty() || loaderNeedsFullUpdate()) {
+                    updateAdapter();
+                }
                 showLoading(false);
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError databaseError) {
+                if (getActivity() == null || !isAdded()) return;
                 showLoading(false);
                 Log.e(TAG, "Error loading chats: " + databaseError.getMessage());
                 Toast.makeText(getContext(), "Ошибка загрузки чатов", Toast.LENGTH_SHORT).show();
             }
         };
         databaseReference.child("chats").addValueEventListener(chatsListener);
+    }
+
+
+    // Кэш уже загруженных пользователей
+    private void loadCachedUserInfo(String participantId, Chat chat) {
+        final String chatId = chat.getChatId();
+
+        // Проверяем, есть ли данные в кэше
+        if (userNameCache.containsKey(participantId)) {
+            Chat existingChat = loadedChats.get(chatId);
+            if (existingChat != null) {
+                boolean changed = false;
+
+                String cachedName = userNameCache.get(participantId);
+                if (!cachedName.equals(existingChat.getParticipantName())) {
+                    existingChat.setParticipantName(cachedName);
+                    changed = true;
+                }
+
+                if (userAvatarCache.containsKey(participantId)) {
+                    String cachedAvatar = userAvatarCache.get(participantId);
+                    if (!cachedAvatar.equals(existingChat.getParticipantAvatar())) {
+                        existingChat.setParticipantAvatar(cachedAvatar);
+                        changed = true;
+                    }
+                }
+
+                if (changed) {
+                    updateSingleChat(existingChat);
+                }
+            }
+            return;
+        }
+
+        // Если в кэше нет - загружаем из Firebase
+        databaseReference.child("users").child(participantId)
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                        if (getActivity() == null || !isAdded()) return;
+
+                        Chat existingChat = loadedChats.get(chatId);
+                        if (existingChat == null) return;
+
+                        boolean changed = false;
+
+                        if (dataSnapshot.exists()) {
+                            String username = dataSnapshot.child("username").getValue(String.class);
+                            if (username == null) username = dataSnapshot.child("name").getValue(String.class);
+
+                            String avatarUrl = dataSnapshot.child("avatarUrl").getValue(String.class);
+
+                            if (username != null && !username.equals(existingChat.getParticipantName())) {
+                                existingChat.setParticipantName(username);
+                                userNameCache.put(participantId, username);
+                                changed = true;
+                            }
+                            if (avatarUrl != null && !avatarUrl.equals(existingChat.getParticipantAvatar())) {
+                                existingChat.setParticipantAvatar(avatarUrl);
+                                userAvatarCache.put(participantId, avatarUrl);
+                                changed = true;
+                            }
+                        } else if (!existingChat.getParticipantName().equals("Пользователь")) {
+                            existingChat.setParticipantName("Пользователь");
+                            existingChat.setParticipantAvatar("");
+                            userNameCache.put(participantId, "Пользователь");
+                            changed = true;
+                        }
+
+                        userInfoLoaded.put(participantId, true);
+
+                        if (changed) {
+                            updateSingleChat(existingChat);
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError databaseError) {}
+                });
+    }
+
+    // ДОБАВЬТЕ ЭТИ ПОЛЯ ДЛЯ КЭША:
+    private final Map<String, String> userNameCache = new HashMap<>();
+    private final Map<String, String> userAvatarCache = new HashMap<>();
+
+    // Добавьте метод для сравнения чатов
+    private boolean hasChatChanged(Chat oldChat, Chat newChat) {
+        if (oldChat == null || newChat == null) return true;
+
+        return !TextUtils.equals(oldChat.getLastMessage(), newChat.getLastMessage())
+                || oldChat.getTimestamp() != newChat.getTimestamp()
+                || oldChat.getUnreadCount() != newChat.getUnreadCount()
+                || !TextUtils.equals(oldChat.getParticipantName(), newChat.getParticipantName())
+                || !TextUtils.equals(oldChat.getParticipantAvatar(), newChat.getParticipantAvatar())
+                || oldChat.isOnline() != newChat.isOnline();
+    }
+
+
+
+
+
+
+
+
+
+    // Запуск слушателя для сообщений в чате
+    private void startChatMessageListener(String chatId) {
+        if (chatMessageListeners.containsKey(chatId)) return;
+
+        ValueEventListener listener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (getActivity() == null || !isAdded()) return;
+
+                Chat chat = loadedChats.get(chatId);
+                if (chat != null) {
+                    // ИСПРАВЛЕНО: получаем родительский DataSnapshot через getRef().getParent()
+                    if (snapshot.getRef() != null && snapshot.getRef().getParent() != null) {
+                        snapshot.getRef().getParent().addListenerForSingleValueEvent(new ValueEventListener() {
+                            @Override
+                            public void onDataChange(@NonNull DataSnapshot chatSnapshot) {
+                                if (getActivity() == null || !isAdded()) return;
+                                updateLastMessageInfo(chatSnapshot, chat);
+                            }
+
+                            @Override
+                            public void onCancelled(@NonNull DatabaseError error) {}
+                        });
+                    } else {
+                        // Если не можем получить родителя, используем snapshot как есть
+                        updateLastMessageInfo(snapshot, chat);
+                    }
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {}
+        };
+
+        chatMessageListeners.put(chatId, listener);
+        databaseReference.child("chats").child(chatId).child("messages")
+                .addValueEventListener(listener);
+    }
+
+    private void stopChatMessageListener(String chatId) {
+        ValueEventListener listener = chatMessageListeners.remove(chatId);
+        if (listener != null) {
+            databaseReference.child("chats").child(chatId).child("messages")
+                    .removeEventListener(listener);
+        }
+    }
+
+    private boolean loaderNeedsFullUpdate() {
+        return adapter == null || adapter.getItemCount() == 0;
     }
 
     private void checkGroupMembership(String chatId, Chat chat) {
@@ -296,7 +516,10 @@ public class HomeFragment extends Fragment {
         }
 
         if (TextUtils.isEmpty(groupId)) {
-            addToLoadedChats(chatId, chat);
+            if (!loadedChats.containsKey(chatId)) {
+                addToLoadedChats(chatId, chat);
+                startChatMessageListener(chatId);
+            }
             return;
         }
 
@@ -305,10 +528,14 @@ public class HomeFragment extends Fragment {
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        if (getActivity() == null || !isAdded()) return;
+
                         Boolean isMember = snapshot.getValue(Boolean.class);
                         if (isMember != null && isMember) {
-                            addToLoadedChats(chatId, chat);
-                            unreadCountCache.put(chatId, chat.getUnreadCount());
+                            if (!loadedChats.containsKey(chatId)) {
+                                addToLoadedChats(chatId, chat);
+                                startChatMessageListener(chatId);
+                            }
                         } else {
                             Log.d(TAG, "User removed from group: " + finalGroupId);
                         }
@@ -316,8 +543,11 @@ public class HomeFragment extends Fragment {
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
-                        addToLoadedChats(chatId, chat);
-                        unreadCountCache.put(chatId, chat.getUnreadCount());
+                        if (getActivity() == null || !isAdded()) return;
+                        if (!loadedChats.containsKey(chatId)) {
+                            addToLoadedChats(chatId, chat);
+                            startChatMessageListener(chatId);
+                        }
                     }
                 });
     }
@@ -334,35 +564,64 @@ public class HomeFragment extends Fragment {
     }
 
     private void loadParticipantInfo(String participantId, Chat chat) {
+        final String chatId = chat.getChatId();
+
+        // Если данные уже загружены - используем кэш
+        if (userInfoLoaded.containsKey(participantId)) {
+            loadCachedUserInfo(participantId, chat);
+            return;
+        }
+
         databaseReference.child("users").child(participantId)
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                        if (getActivity() == null || !isAdded()) return;
+
+                        Chat existingChat = loadedChats.get(chatId);
+                        if (existingChat == null) return;
+
+                        boolean changed = false;
+
                         if (dataSnapshot.exists()) {
                             String username = dataSnapshot.child("username").getValue(String.class);
                             if (username == null) username = dataSnapshot.child("name").getValue(String.class);
-                            chat.setParticipantName(username != null ? username : "Пользователь");
 
                             String avatarUrl = dataSnapshot.child("avatarUrl").getValue(String.class);
-                            chat.setParticipantAvatar(avatarUrl != null ? avatarUrl : "");
-                        } else {
-                            chat.setParticipantName("Пользователь");
-                            chat.setParticipantAvatar("");
+
+                            if (username != null && !username.equals(existingChat.getParticipantName())) {
+                                existingChat.setParticipantName(username);
+                                userNameCache.put(participantId, username);
+                                changed = true;
+                            }
+                            if (avatarUrl != null && !avatarUrl.equals(existingChat.getParticipantAvatar())) {
+                                existingChat.setParticipantAvatar(avatarUrl);
+                                userAvatarCache.put(participantId, avatarUrl);
+                                changed = true;
+                            }
+                        } else if (!existingChat.getParticipantName().equals("Пользователь")) {
+                            existingChat.setParticipantName("Пользователь");
+                            existingChat.setParticipantAvatar("");
+                            userNameCache.put(participantId, "Пользователь");
+                            changed = true;
                         }
-                        updateAdapter();
+
+                        userInfoLoaded.put(participantId, true);
+
+                        if (changed) {
+                            updateSingleChat(existingChat);
+                        }
                     }
 
                     @Override
-                    public void onCancelled(@NonNull DatabaseError databaseError) {
-                        chat.setParticipantName("Пользователь");
-                        chat.setParticipantAvatar("");
-                        updateAdapter();
-                    }
+                    public void onCancelled(@NonNull DatabaseError databaseError) {}
                 });
     }
 
     private void startOnlineListener(String userId, Chat chat) {
         if (TextUtils.isEmpty(userId)) return;
+
+        final String chatId = chat.getChatId();
 
         ValueEventListener old = onlineListeners.remove(userId);
         if (old != null) {
@@ -373,9 +632,17 @@ public class HomeFragment extends Fragment {
         ValueEventListener listener = new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (getActivity() == null || !isAdded()) return;
+
                 Boolean online = snapshot.getValue(Boolean.class);
-                chat.setOnline(online != null && online);
-                updateSingleChat(chat);
+                boolean newStatus = online != null && online;
+
+                // Находим актуальный чат по chatId
+                Chat existingChat = loadedChats.get(chatId);
+                if (existingChat != null && existingChat.isOnline() != newStatus) {
+                    existingChat.setOnline(newStatus);
+                    updateSingleChat(existingChat);
+                }
             }
 
             @Override
@@ -387,16 +654,29 @@ public class HomeFragment extends Fragment {
                 .addValueEventListener(listener);
     }
 
-    // Обновление одного чата в адаптере
     private void updateSingleChat(Chat updatedChat) {
-        if (adapter != null) {
-            adapter.updateChat(updatedChat);
+        if (adapter != null && getActivity() != null) {
+            getActivity().runOnUiThread(() -> {
+                // Находим позицию чата в текущем списке
+                List<Chat> currentChats = adapter.getChats();
+                int position = -1;
+                for (int i = 0; i < currentChats.size(); i++) {
+                    if (currentChats.get(i).getChatId().equals(updatedChat.getChatId())) {
+                        position = i;
+                        break;
+                    }
+                }
+
+                if (position != -1) {
+                    adapter.updateChatAtPosition(updatedChat, position);
+                }
+            });
         }
     }
 
-
-
-    private void loadLastMessageInfo(DataSnapshot chatSnapshot, Chat chat) {
+    // Обновление информации о последнем сообщении с проверкой изменений
+    // Обновление информации о последнем сообщении с проверкой изменений
+    private void updateLastMessageInfo(DataSnapshot chatSnapshot, Chat chat) {
         String lastMessage = "Нет сообщений";
         long lastTimestamp = 0;
         String lastSenderId = null;
@@ -405,7 +685,6 @@ public class HomeFragment extends Fragment {
 
         DataSnapshot messagesNode = chatSnapshot.child("messages");
         if (messagesNode.exists()) {
-            // Собираем все сообщения для правильного подсчета
             List<Map<String, Object>> allMessages = new ArrayList<>();
             for (DataSnapshot msgSnap : messagesNode.getChildren()) {
                 Map<String, Object> data = getMessageDataSafely(msgSnap);
@@ -414,7 +693,6 @@ public class HomeFragment extends Fragment {
                 }
             }
 
-            // Сортируем по времени
             allMessages.sort((m1, m2) -> {
                 Long ts1 = safeCastToLong(m1.get("timestamp"));
                 Long ts2 = safeCastToLong(m2.get("timestamp"));
@@ -423,7 +701,6 @@ public class HomeFragment extends Fragment {
                 return ts1.compareTo(ts2);
             });
 
-            // Проходим по всем сообщениям
             for (Map<String, Object> data : allMessages) {
                 String messageText = safeCastToString(data.get("text"));
                 Long ts = safeCastToLong(data.get("timestamp"));
@@ -438,7 +715,6 @@ public class HomeFragment extends Fragment {
                     lastMessageType = msgType != null ? msgType : "text";
                 }
 
-                // Подсчет непрочитанных сообщений от других пользователей
                 if (senderId != null && !senderId.equals(currentUserId)) {
                     if (!checkMessageReadStatus(data, currentUserId)) {
                         unreadCount++;
@@ -447,14 +723,47 @@ public class HomeFragment extends Fragment {
             }
         }
 
-        chat.setLastMessage(lastMessage);
-        chat.setTimestamp(lastTimestamp > 0 ? lastTimestamp : System.currentTimeMillis());
-        chat.setUnreadCount(unreadCount);
-        chat.setLastMessageSenderId(lastSenderId);
-        chat.setLastMessageMine(TextUtils.equals(currentUserId, lastSenderId));
-        chat.setLastMessageTime(formatTimestamp(lastTimestamp));
-        if (chat.getMessageType() == null) {
+        // Проверяем изменения - ИСПРАВЛЕНО: используем TextUtils.equals()
+        boolean changed = false;
+
+        // ИСПРАВЛЕНО: безопасное сравнение строк
+        if (!TextUtils.equals(chat.getLastMessage(), lastMessage)) {
+            chat.setLastMessage(lastMessage);
+            changed = true;
+        }
+        if (chat.getTimestamp() != lastTimestamp) {
+            chat.setTimestamp(lastTimestamp > 0 ? lastTimestamp : System.currentTimeMillis());
+            changed = true;
+        }
+        if (chat.getUnreadCount() != unreadCount) {
+            chat.setUnreadCount(unreadCount);
+            changed = true;
+        }
+        if (!TextUtils.equals(chat.getLastMessageSenderId(), lastSenderId)) {
+            chat.setLastMessageSenderId(lastSenderId);
+            changed = true;
+        }
+
+        boolean isMine = TextUtils.equals(currentUserId, lastSenderId);
+        if (chat.isLastMessageMine() != isMine) {
+            chat.setLastMessageMine(isMine);
+            changed = true;
+        }
+
+        String newTime = formatTimestamp(lastTimestamp);
+        if (!TextUtils.equals(chat.getLastMessageTime(), newTime)) {
+            chat.setLastMessageTime(newTime);
+            changed = true;
+        }
+
+        if (!TextUtils.equals(chat.getMessageType(), lastMessageType)) {
             chat.setMessageType(lastMessageType);
+            changed = true;
+        }
+
+        // Обновляем только если были изменения
+        if (changed) {
+            updateSingleChat(chat);
         }
     }
 
@@ -504,11 +813,10 @@ public class HomeFragment extends Fragment {
     private void deleteChat(Chat chat, int position) {
         String chatId = chat.getChatId();
         loadedChats.remove(chatId);
-        unreadCountCache.remove(chatId);
-        List<Chat> currentChats = adapter.getChats();
-        if (position < currentChats.size()) {
-            currentChats.remove(position);
-            adapter.setChats(currentChats);
+        stopChatMessageListener(chatId);
+
+        if (adapter != null) {
+            adapter.removeChatById(chatId);
         }
 
         if (!chat.isGroupChat()) {
@@ -545,11 +853,9 @@ public class HomeFragment extends Fragment {
     public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_CODE_OPEN_CHAT && !TextUtils.isEmpty(pendingRefreshChatId)) {
-            // Обнуляем счетчик для этого чата
             Chat chat = loadedChats.get(pendingRefreshChatId);
             if (chat != null) {
                 chat.setUnreadCount(0);
-                unreadCountCache.put(pendingRefreshChatId, 0);
                 updateSingleChat(chat);
             }
             pendingRefreshChatId = null;
@@ -623,9 +929,13 @@ public class HomeFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
-        // Обновляем все чаты при возврате
-        if (dataLoaded) {
-            updateAdapter();
+        if (dataLoaded && adapter != null) {
+            // Обновляем только непрочитанные счетчики
+            for (Chat chat : loadedChats.values()) {
+                if (chat.getUnreadCount() > 0) {
+                    updateSingleChat(chat);
+                }
+            }
         }
     }
 
@@ -642,9 +952,13 @@ public class HomeFragment extends Fragment {
             databaseReference.child("users").child(entry.getKey()).child("online")
                     .removeEventListener(entry.getValue());
         }
+        for (Map.Entry<String, ValueEventListener> entry : chatMessageListeners.entrySet()) {
+            databaseReference.child("chats").child(entry.getKey()).child("messages")
+                    .removeEventListener(entry.getValue());
+        }
         onlineListeners.clear();
+        chatMessageListeners.clear();
+        userInfoLoaded.clear();
         dataLoaded = false;
     }
-
-
 }

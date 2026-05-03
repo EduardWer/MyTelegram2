@@ -801,10 +801,10 @@ public class GroupChatActivity extends AppCompatActivity {
 
     private void scrollToBottom() {
         if (!messagesList.isEmpty() && messagesRecyclerView != null) {
+
             messagesRecyclerView.scrollToPosition(messagesList.size() - 1);
         }
     }
-
     private void showLoading(boolean show) {
         if (progressBar != null) {
             progressBar.setVisibility(show ? View.VISIBLE : View.GONE);

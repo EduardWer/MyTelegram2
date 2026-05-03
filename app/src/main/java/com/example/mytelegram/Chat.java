@@ -1,5 +1,7 @@
 package com.example.mytelegram;
 
+import android.text.TextUtils;
+
 public class Chat {
 
     // Основные поля
@@ -23,6 +25,7 @@ public class Chat {
     private String groupName;          // Название группы
     private String messageType;        // Тип последнего сообщения (text, image, video, etc.)
     private boolean isGroup;           // Флаг группы
+    private boolean online;
 
     // Конструкторы
     public Chat() {
@@ -242,4 +245,48 @@ public class Chat {
                 ", chatType='" + chatType + '\'' +
                 '}';
     }
+
+
+
+
+
+
+
+
+    // В классе Chat.java добавьте:
+    public Chat copy() {
+        Chat copy = new Chat();
+        copy.setChatId(this.chatId);
+        copy.setChatType(this.chatType);
+        copy.setParticipantId(this.participantId);
+        copy.setParticipantName(this.participantName);
+        copy.setParticipantAvatar(this.participantAvatar);
+        copy.setGroupId(this.groupId);
+        copy.setGroupName(this.groupName);
+        copy.setLastMessage(this.lastMessage);
+        copy.setTimestamp(this.timestamp);
+        copy.setUnreadCount(this.unreadCount);
+        copy.setLastMessageSenderId(this.lastMessageSenderId);
+        copy.setLastMessageMine(this.lastMessageMine);
+        copy.setLastMessageTime(this.lastMessageTime);
+        copy.setMessageType(this.messageType);
+        copy.setOnline(this.online);
+        return copy;
+    }
+
+    public boolean hasChanges(Chat other) {
+        if (other == null) return true;
+
+        return !TextUtils.equals(this.lastMessage, other.lastMessage)
+                || this.timestamp != other.timestamp
+                || this.unreadCount != other.unreadCount
+                || !TextUtils.equals(this.participantName, other.participantName)
+                || !TextUtils.equals(this.participantAvatar, other.participantAvatar)
+                || this.online != other.online;
+    }
+
+    /**
+     * Сбрасывает флаг изменений (обновляет кэшированные значения)
+     */
+   
 }

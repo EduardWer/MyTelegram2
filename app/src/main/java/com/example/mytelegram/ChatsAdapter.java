@@ -19,14 +19,22 @@ import com.google.firebase.database.ValueEventListener;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHolder> {
     private List<Chat> chatList;
     private final OnChatClickListener onChatClickListener;
     private DatabaseReference usersRef;
     private DatabaseReference groupsRef;
+    private DatabaseReference avatarsRef;
+
+    // Кэш для аватарок, чтобы не перезагружать
+    private final Map<String, String> avatarCache = new HashMap<>();
+    private final Map<String, String> userNameCache = new HashMap<>();
+    private final Map<String, String> groupNameCache = new HashMap<>();
 
     public interface OnChatClickListener {
         void onChatClick(Chat chat);
@@ -37,6 +45,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
         this.onChatClickListener = listener;
         this.usersRef = FirebaseDatabase.getInstance().getReference().child("users");
         this.groupsRef = FirebaseDatabase.getInstance().getReference().child("groups");
+        this.avatarsRef = FirebaseDatabase.getInstance().getReference().child("avatars");
     }
 
     @NonNull
@@ -78,8 +87,7 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
     }
 
     /**
-     * Обновляет один чат в списке
-     * @param updatedChat обновленный чат
+     * Обновляет один чат в списке И ОБНОВЛЯЕТ КЭШ
      */
     public void updateChat(Chat updatedChat) {
         if (updatedChat == null || updatedChat.getChatId() == null) return;
@@ -88,6 +96,29 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
             Chat currentChat = chatList.get(i);
             if (currentChat != null && updatedChat.getChatId().equals(currentChat.getChatId())) {
                 chatList.set(i, updatedChat);
+
+                // ОБНОВЛЯЕМ КЭШ
+                if (!updatedChat.isGroupChat()) {
+                    String userId = updatedChat.getParticipantId();
+                    if (userId != null) {
+                        if (updatedChat.getParticipantName() != null && !updatedChat.getParticipantName().isEmpty()) {
+                            userNameCache.put(userId, updatedChat.getParticipantName());
+                        }
+                        if (updatedChat.getParticipantAvatar() != null && !updatedChat.getParticipantAvatar().isEmpty()) {
+                            avatarCache.put(userId, updatedChat.getParticipantAvatar());
+                        }
+                    }
+                } else {
+                    // Для группы
+                    String groupId = updatedChat.getChatId();
+                    if (updatedChat.getGroupName() != null && !updatedChat.getGroupName().isEmpty()) {
+                        groupNameCache.put(groupId, updatedChat.getGroupName());
+                    }
+                    if (updatedChat.getParticipantAvatar() != null && !updatedChat.getParticipantAvatar().isEmpty()) {
+                        avatarCache.put(groupId, updatedChat.getParticipantAvatar());
+                    }
+                }
+
                 notifyItemChanged(i);
                 break;
             }
@@ -95,9 +126,53 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
     }
 
     /**
+     * Обновляет чат на конкретной позиции И ОБНОВЛЯЕТ КЭШ
+     */
+    public void updateChatAtPosition(Chat chat, int position) {
+        if (position >= 0 && position < chatList.size()) {
+            chatList.set(position, chat);
+
+            // ОБНОВЛЯЕМ КЭШ
+            if (!chat.isGroupChat()) {
+                String userId = chat.getParticipantId();
+                if (userId != null) {
+                    if (chat.getParticipantName() != null && !chat.getParticipantName().isEmpty()) {
+                        userNameCache.put(userId, chat.getParticipantName());
+                    }
+                    if (chat.getParticipantAvatar() != null && !chat.getParticipantAvatar().isEmpty()) {
+                        avatarCache.put(userId, chat.getParticipantAvatar());
+                    }
+                }
+            } else {
+                // Для группы
+                String groupId = chat.getChatId();
+                if (chat.getGroupName() != null && !chat.getGroupName().isEmpty()) {
+                    groupNameCache.put(groupId, chat.getGroupName());
+                }
+                if (chat.getParticipantAvatar() != null && !chat.getParticipantAvatar().isEmpty()) {
+                    avatarCache.put(groupId, chat.getParticipantAvatar());
+                }
+            }
+
+            notifyItemChanged(position);
+        }
+    }
+
+    /**
+     * Удаляет чат по ID
+     */
+    public void removeChatById(String chatId) {
+        for (int i = 0; i < chatList.size(); i++) {
+            if (chatList.get(i).getChatId().equals(chatId)) {
+                chatList.remove(i);
+                notifyItemRemoved(i);
+                break;
+            }
+        }
+    }
+
+    /**
      * Обновляет счетчик непрочитанных для чата
-     * @param chatId ID чата
-     * @param unreadCount новый счетчик
      */
     public void updateUnreadCount(String chatId, int unreadCount) {
         if (chatId == null) return;
@@ -112,14 +187,23 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
         }
     }
 
+    /**
+     * Очищает весь кэш
+     */
+    public void clearCache() {
+        avatarCache.clear();
+        userNameCache.clear();
+        groupNameCache.clear();
+    }
+
     class ChatViewHolder extends RecyclerView.ViewHolder {
-        private TextView textViewUserName;
-        private TextView textViewLastMessage;
-        private TextView textViewTime;
-        private TextView textViewUnreadCount;
-        private ImageView imageViewAvatar;
-        private ImageView groupIcon;
-        View onlineIndicator;
+        private final TextView textViewUserName;
+        private final TextView textViewLastMessage;
+        private final TextView textViewTime;
+        private final TextView textViewUnreadCount;
+        private final ImageView imageViewAvatar;
+        private final ImageView groupIcon;
+        final View onlineIndicator;
 
         public ChatViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -148,86 +232,114 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
                 textViewUnreadCount.setVisibility(View.GONE);
             }
 
-            // Проверяем тип чата и загружаем соответствующую информацию
+            // Проверяем тип чата
             String chatType = chat.getChatType();
+            String chatId = chat.getChatId();
 
             if ("group".equals(chatType)) {
                 // Групповой чат
                 if (groupIcon != null) {
                     groupIcon.setVisibility(View.VISIBLE);
                 }
-                // Если есть сохраненное имя группы, используем его
-                if (chat.getGroupName() != null && !chat.getGroupName().isEmpty()) {
+                // Используем кэш для имени группы
+                String cachedName = groupNameCache.get(chatId);
+                if (cachedName != null) {
+                    textViewUserName.setText(cachedName);
+                } else if (chat.getGroupName() != null && !chat.getGroupName().isEmpty()) {
                     textViewUserName.setText(chat.getGroupName());
-                    loadGroupAvatar(chat.getGroupId());
+                    groupNameCache.put(chatId, chat.getGroupName());
+                } else if (chat.getGroupId() != null) {
+                    loadGroupInfo(chat.getGroupId(), chatId);
                 } else {
-                    loadGroupInfo(chat.getGroupId());
+                    textViewUserName.setText("Группа");
                 }
+
+                // Загружаем аватарку группы
+                loadGroupAvatar(chat.getGroupId(), chatId);
             } else {
                 // Личный чат
                 if (groupIcon != null) {
                     groupIcon.setVisibility(View.GONE);
                 }
-                // Если есть сохраненное имя пользователя, используем его
-                if (chat.getParticipantName() != null && !chat.getParticipantName().isEmpty()) {
+
+                String participantId = chat.getParticipantId();
+
+                // Используем кэш для имени пользователя
+                String cachedName = userNameCache.get(participantId);
+                if (cachedName != null) {
+                    textViewUserName.setText(cachedName);
+                } else if (chat.getParticipantName() != null && !chat.getParticipantName().isEmpty()) {
                     textViewUserName.setText(chat.getParticipantName());
-                    if (chat.getParticipantAvatar() != null && !chat.getParticipantAvatar().isEmpty()) {
-                        loadAvatarFromUrl(chat.getParticipantAvatar());
-                    } else {
-                        loadUserAvatar(chat.getParticipantId());
-                    }
+                    userNameCache.put(participantId, chat.getParticipantName());
+                } else if (participantId != null) {
+                    loadUserInfo(participantId);
                 } else {
-                    loadUserInfo(chat.getParticipantId());
+                    textViewUserName.setText("Пользователь");
+                }
+
+                // Загружаем аватарку пользователя
+                String cachedAvatar = avatarCache.get(participantId);
+                if (cachedAvatar != null && !cachedAvatar.isEmpty()) {
+                    loadAvatarFromUrl(cachedAvatar);
+                } else if (chat.getParticipantAvatar() != null && !chat.getParticipantAvatar().isEmpty()) {
+                    loadAvatarFromUrl(chat.getParticipantAvatar());
+                    avatarCache.put(participantId, chat.getParticipantAvatar());
+                } else if (participantId != null) {
+                    loadUserAvatar(participantId);
+                } else {
+                    setDefaultAvatar();
                 }
             }
         }
 
-        private void loadGroupInfo(String groupId) {
+        private void loadGroupInfo(String groupId, String chatId) {
             if (groupId == null || groupId.isEmpty()) {
-                setDefaultGroupInfo();
+                textViewUserName.setText("Группа");
                 return;
             }
 
-            groupsRef.child(groupId).addListenerForSingleValueEvent(new ValueEventListener() {
+            groupsRef.child(groupId).child("name").addListenerForSingleValueEvent(new ValueEventListener() {
                 @Override
                 public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
-                    if (dataSnapshot.exists()) {
-                        String groupName = dataSnapshot.child("name").getValue(String.class);
-                        if (groupName == null) {
-                            groupName = "Группа";
-                        }
-                        textViewUserName.setText(groupName);
+                    if (itemView.getContext() == null) return;
 
-                        String avatarUrl = dataSnapshot.child("avatarUrl").getValue(String.class);
-                        if (avatarUrl != null && !avatarUrl.isEmpty()) {
-                            loadAvatarFromUrl(avatarUrl);
-                        } else {
-                            setDefaultAvatar();
-                        }
-                    } else {
-                        setDefaultGroupInfo();
+                    String groupName = dataSnapshot.getValue(String.class);
+                    if (groupName == null || groupName.isEmpty()) {
+                        groupName = "Группа";
                     }
+                    textViewUserName.setText(groupName);
+                    groupNameCache.put(chatId, groupName);
                 }
 
                 @Override
                 public void onCancelled(@NonNull DatabaseError databaseError) {
-                    setDefaultGroupInfo();
+                    textViewUserName.setText("Группа");
                 }
             });
         }
 
-        private void loadGroupAvatar(String groupId) {
+        private void loadGroupAvatar(String groupId, String chatId) {
             if (groupId == null || groupId.isEmpty()) {
                 setDefaultAvatar();
+                return;
+            }
+
+            // Проверяем кэш
+            String cachedAvatar = avatarCache.get(groupId);
+            if (cachedAvatar != null) {
+                loadAvatarFromUrl(cachedAvatar);
                 return;
             }
 
             groupsRef.child(groupId).child("avatarUrl").addListenerForSingleValueEvent(new ValueEventListener() {
                 @Override
                 public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                    if (itemView.getContext() == null) return;
+
                     String avatarUrl = dataSnapshot.getValue(String.class);
                     if (avatarUrl != null && !avatarUrl.isEmpty()) {
                         loadAvatarFromUrl(avatarUrl);
+                        avatarCache.put(groupId, avatarUrl);
                     } else {
                         setDefaultAvatar();
                     }
@@ -242,50 +354,66 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
 
         private void loadUserInfo(String userId) {
             if (userId == null || userId.isEmpty()) {
-                setDefaultUserInfo();
+                textViewUserName.setText("Пользователь");
+                return;
+            }
+
+            // Проверяем кэш
+            String cachedName = userNameCache.get(userId);
+            if (cachedName != null) {
+                textViewUserName.setText(cachedName);
                 return;
             }
 
             usersRef.child(userId).addListenerForSingleValueEvent(new ValueEventListener() {
                 @Override
                 public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
+                    if (itemView.getContext() == null) return;
+
+                    String userName = null;
                     if (dataSnapshot.exists()) {
-                        String userName = dataSnapshot.child("username").getValue(String.class);
+                        userName = dataSnapshot.child("username").getValue(String.class);
                         if (userName == null) {
                             userName = dataSnapshot.child("name").getValue(String.class);
                         }
-                        if (userName == null) {
-                            userName = "Пользователь";
-                        }
-                        textViewUserName.setText(userName);
-                        loadUserAvatar(userId);
-                    } else {
-                        setDefaultUserInfo();
                     }
+
+                    if (userName == null || userName.isEmpty()) {
+                        userName = "Пользователь";
+                    }
+                    textViewUserName.setText(userName);
+                    userNameCache.put(userId, userName);
                 }
 
                 @Override
                 public void onCancelled(@NonNull DatabaseError databaseError) {
-                    setDefaultUserInfo();
+                    textViewUserName.setText("Пользователь");
                 }
             });
         }
 
         private void loadUserAvatar(String userId) {
-            DatabaseReference avatarRef = FirebaseDatabase.getInstance()
-                    .getReference("avatars")
-                    .child(userId);
+            if (userId == null || userId.isEmpty()) {
+                setDefaultAvatar();
+                return;
+            }
 
-            avatarRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            // Проверяем кэш
+            String cachedAvatar = avatarCache.get(userId);
+            if (cachedAvatar != null) {
+                loadAvatarFromUrl(cachedAvatar);
+                return;
+            }
+
+            avatarsRef.child(userId).addListenerForSingleValueEvent(new ValueEventListener() {
                 @Override
                 public void onDataChange(@NonNull DataSnapshot dataSnapshot) {
-                    if (dataSnapshot.exists()) {
-                        String avatarUrl = dataSnapshot.getValue(String.class);
-                        if (avatarUrl != null && !avatarUrl.isEmpty()) {
-                            loadAvatarFromUrl(avatarUrl);
-                        } else {
-                            setDefaultAvatar();
-                        }
+                    if (itemView.getContext() == null) return;
+
+                    String avatarUrl = dataSnapshot.getValue(String.class);
+                    if (avatarUrl != null && !avatarUrl.isEmpty()) {
+                        loadAvatarFromUrl(avatarUrl);
+                        avatarCache.put(userId, avatarUrl);
                     } else {
                         setDefaultAvatar();
                     }
@@ -299,8 +427,13 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
         }
 
         private void loadAvatarFromUrl(String avatarUrl) {
-            if (avatarUrl == null || avatarUrl.isEmpty()) {
+            if (avatarUrl == null || avatarUrl.isEmpty() || imageViewAvatar == null) {
                 setDefaultAvatar();
+                return;
+            }
+
+            // Проверяем, что Activity/View еще жива
+            if (itemView.getContext() == null) {
                 return;
             }
 
@@ -312,18 +445,10 @@ public class ChatsAdapter extends RecyclerView.Adapter<ChatsAdapter.ChatViewHold
                     .into(imageViewAvatar);
         }
 
-        private void setDefaultUserInfo() {
-            textViewUserName.setText("Пользователь");
-            setDefaultAvatar();
-        }
-
-        private void setDefaultGroupInfo() {
-            textViewUserName.setText("Группа");
-            setDefaultAvatar();
-        }
-
         private void setDefaultAvatar() {
-            imageViewAvatar.setImageResource(R.drawable.ic_person);
+            if (imageViewAvatar != null) {
+                imageViewAvatar.setImageResource(R.drawable.ic_person);
+            }
         }
 
         private String formatTime(long timestamp) {
