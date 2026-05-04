@@ -80,6 +80,13 @@ public class HomeFragment extends Fragment {
     // Кэш уже загруженных пользователей
     private final Map<String, Boolean> userInfoLoaded = new HashMap<>();
 
+    // Кэши для имен и аватарок
+    private final Map<String, String> userNameCache = new HashMap<>();
+    private final Map<String, String> userAvatarCache = new HashMap<>();
+
+    // Флаг для предотвращения множественных обновлений
+    private boolean isUpdating = false;
+
     private static class GroupInfo {
         String name;
         String avatarUrl;
@@ -199,8 +206,9 @@ public class HomeFragment extends Fragment {
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (getActivity() == null || !isAdded()) return;
 
-                groupInfoMap.clear();
-                chatIdToGroupId.clear();
+                boolean groupInfoChanged = false;
+
+                // Проверяем, изменились ли данные групп
                 for (DataSnapshot groupSnap : snapshot.getChildren()) {
                     String groupId = groupSnap.getKey();
                     String chatId = groupSnap.child("chatId").getValue(String.class);
@@ -208,23 +216,82 @@ public class HomeFragment extends Fragment {
                     String avatarUrl = groupSnap.child("avatarUrl").getValue(String.class);
 
                     if (!TextUtils.isEmpty(chatId)) {
+                        GroupInfo existingInfo = groupInfoMap.get(chatId);
+                        String newName = name != null ? name : "Группа";
+                        String newAvatarUrl = avatarUrl != null ? avatarUrl : "";
+
+                        if (existingInfo == null ||
+                                !TextUtils.equals(existingInfo.name, newName) ||
+                                !TextUtils.equals(existingInfo.avatarUrl, newAvatarUrl)) {
+                            groupInfoChanged = true;
+                        }
+
                         GroupInfo info = new GroupInfo();
-                        info.name = name != null ? name : "Группа";
-                        info.avatarUrl = avatarUrl != null ? avatarUrl : "";
+                        info.name = newName;
+                        info.avatarUrl = newAvatarUrl;
                         groupInfoMap.put(chatId, info);
                         chatIdToGroupId.put(chatId, groupId);
                     }
                 }
-                loadChats();
+
+                // ОБНОВЛЯЕМ ГРУППОВЫЕ ЧАТЫ ТОЛЬКО ЕСЛИ БЫЛИ ИЗМЕНЕНИЯ
+                if (groupInfoChanged) {
+                    refreshAllGroupChats();
+                }
+
+                if (chatsListener == null) {
+                    loadChats();
+                }
+                showLoading(false);
             }
 
             @Override
             public void onCancelled(@NonNull DatabaseError error) {
                 Log.e(TAG, "Groups load cancelled: " + error.getMessage());
-                loadChats();
+                if (chatsListener == null) {
+                    loadChats();
+                }
+                showLoading(false);
             }
         };
         databaseReference.child("groups").addValueEventListener(groupsListener);
+    }
+
+    /**
+     * Обновляет все групповые чаты актуальной информацией из groupInfoMap
+     * ТОЛЬКО если данные реально изменились
+     */
+    private void refreshAllGroupChats() {
+        if (isUpdating) return;
+        isUpdating = true;
+
+        try {
+            for (Chat chat : loadedChats.values()) {
+                if (chat.isGroupChat()) {
+                    GroupInfo info = groupInfoMap.get(chat.getChatId());
+                    if (info != null) {
+                        boolean changed = false;
+
+                        if (!TextUtils.equals(info.avatarUrl, chat.getParticipantAvatar())) {
+                            chat.setParticipantAvatar(info.avatarUrl);
+                            changed = true;
+                        }
+
+                        if (!TextUtils.equals(info.name, chat.getGroupName())) {
+                            chat.setGroupName(info.name);
+                            chat.setParticipantName(info.name);
+                            changed = true;
+                        }
+
+                        if (changed) {
+                            updateSingleChat(chat);
+                        }
+                    }
+                }
+            }
+        } finally {
+            isUpdating = false;
+        }
     }
 
     private void loadChats() {
@@ -239,6 +306,7 @@ public class HomeFragment extends Fragment {
 
                 // Сохраняем ID существующих чатов для отслеживания удаленных
                 List<String> existingChatIds = new ArrayList<>(loadedChats.keySet());
+                boolean hasNewChats = false;
 
                 for (DataSnapshot chatSnapshot : dataSnapshot.getChildren()) {
                     String chatId = chatSnapshot.getKey();
@@ -255,8 +323,8 @@ public class HomeFragment extends Fragment {
                     if (isNewChat) {
                         chat = new Chat();
                         chat.setChatId(chatId);
+                        hasNewChats = true;
                     } else {
-                        // ИСПРАВЛЕНО: создаем копию, но сохраняем participantId
                         chat = new Chat();
                         chat.setChatId(chatId);
                         chat.setChatType(oldChat.getChatType());
@@ -281,13 +349,9 @@ public class HomeFragment extends Fragment {
                         String participantId = users[0].equals(currentUserId) ? users[1] : users[0];
                         chat.setParticipantId(participantId);
 
-                        // ИСПРАВЛЕНО: загружаем данные пользователя, даже если чат существующий
-                        // потому что данные могли обновиться
                         if (!userInfoLoaded.containsKey(participantId)) {
                             loadParticipantInfo(participantId, chat);
                         } else {
-                            // Если данные уже загружены, берем из кэша
-                            // Нужно реализовать метод getUserFromCache
                             loadCachedUserInfo(participantId, chat);
                         }
                         startOnlineListener(participantId, chat);
@@ -295,13 +359,9 @@ public class HomeFragment extends Fragment {
                         chat.setChatType("group");
                         GroupInfo info = groupInfoMap.get(chatId);
                         if (info != null) {
-                            if (isNewChat || !info.name.equals(chat.getGroupName())) {
-                                chat.setGroupName(info.name);
-                                chat.setParticipantName(info.name);
-                            }
-                            if (isNewChat || !info.avatarUrl.equals(chat.getParticipantAvatar())) {
-                                chat.setParticipantAvatar(info.avatarUrl);
-                            }
+                            chat.setGroupName(info.name);
+                            chat.setParticipantName(info.name);
+                            chat.setParticipantAvatar(info.avatarUrl);
                         }
                         String groupId = chatIdToGroupId.get(chatId);
                         chat.setGroupId(groupId != null ? groupId : "");
@@ -313,12 +373,9 @@ public class HomeFragment extends Fragment {
                     if (chat.isGroupChat()) {
                         checkGroupMembership(chatId, chat);
                     } else if (isNewChat) {
-                        // НОВЫЙ ЧАТ - добавляем
                         loadedChats.put(chatId, chat);
                         startChatMessageListener(chatId);
                     } else {
-                        // СУЩЕСТВУЮЩИЙ ЧАТ - проверяем изменения
-                        // ИСПРАВЛЕНО: сравниваем со старой версией
                         if (hasChatChanged(oldChat, chat)) {
                             loadedChats.put(chatId, chat);
                             updateSingleChat(chat);
@@ -337,11 +394,10 @@ public class HomeFragment extends Fragment {
 
                 dataLoaded = true;
 
-                // Обновляем адаптер только если изменилось количество чатов
-                if (!existingChatIds.isEmpty() || loaderNeedsFullUpdate()) {
+                // Обновляем адаптер только при реальных изменениях
+                if (!existingChatIds.isEmpty() || hasNewChats || loaderNeedsFullUpdate()) {
                     updateAdapter();
                 }
-                showLoading(false);
             }
 
             @Override
@@ -355,12 +411,9 @@ public class HomeFragment extends Fragment {
         databaseReference.child("chats").addValueEventListener(chatsListener);
     }
 
-
-    // Кэш уже загруженных пользователей
     private void loadCachedUserInfo(String participantId, Chat chat) {
         final String chatId = chat.getChatId();
 
-        // Проверяем, есть ли данные в кэше
         if (userNameCache.containsKey(participantId)) {
             Chat existingChat = loadedChats.get(chatId);
             if (existingChat != null) {
@@ -387,7 +440,6 @@ public class HomeFragment extends Fragment {
             return;
         }
 
-        // Если в кэше нет - загружаем из Firebase
         databaseReference.child("users").child(participantId)
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
@@ -402,7 +454,6 @@ public class HomeFragment extends Fragment {
                         if (dataSnapshot.exists()) {
                             String username = dataSnapshot.child("username").getValue(String.class);
                             if (username == null) username = dataSnapshot.child("name").getValue(String.class);
-
                             String avatarUrl = dataSnapshot.child("avatarUrl").getValue(String.class);
 
                             if (username != null && !username.equals(existingChat.getParticipantName())) {
@@ -434,11 +485,6 @@ public class HomeFragment extends Fragment {
                 });
     }
 
-    // ДОБАВЬТЕ ЭТИ ПОЛЯ ДЛЯ КЭША:
-    private final Map<String, String> userNameCache = new HashMap<>();
-    private final Map<String, String> userAvatarCache = new HashMap<>();
-
-    // Добавьте метод для сравнения чатов
     private boolean hasChatChanged(Chat oldChat, Chat newChat) {
         if (oldChat == null || newChat == null) return true;
 
@@ -450,15 +496,6 @@ public class HomeFragment extends Fragment {
                 || oldChat.isOnline() != newChat.isOnline();
     }
 
-
-
-
-
-
-
-
-
-    // Запуск слушателя для сообщений в чате
     private void startChatMessageListener(String chatId) {
         if (chatMessageListeners.containsKey(chatId)) return;
 
@@ -466,10 +503,10 @@ public class HomeFragment extends Fragment {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
                 if (getActivity() == null || !isAdded()) return;
+                if (isUpdating) return;
 
                 Chat chat = loadedChats.get(chatId);
                 if (chat != null) {
-                    // ИСПРАВЛЕНО: получаем родительский DataSnapshot через getRef().getParent()
                     if (snapshot.getRef() != null && snapshot.getRef().getParent() != null) {
                         snapshot.getRef().getParent().addListenerForSingleValueEvent(new ValueEventListener() {
                             @Override
@@ -482,7 +519,6 @@ public class HomeFragment extends Fragment {
                             public void onCancelled(@NonNull DatabaseError error) {}
                         });
                     } else {
-                        // Если не можем получить родителя, используем snapshot как есть
                         updateLastMessageInfo(snapshot, chat);
                     }
                 }
@@ -566,7 +602,6 @@ public class HomeFragment extends Fragment {
     private void loadParticipantInfo(String participantId, Chat chat) {
         final String chatId = chat.getChatId();
 
-        // Если данные уже загружены - используем кэш
         if (userInfoLoaded.containsKey(participantId)) {
             loadCachedUserInfo(participantId, chat);
             return;
@@ -586,7 +621,6 @@ public class HomeFragment extends Fragment {
                         if (dataSnapshot.exists()) {
                             String username = dataSnapshot.child("username").getValue(String.class);
                             if (username == null) username = dataSnapshot.child("name").getValue(String.class);
-
                             String avatarUrl = dataSnapshot.child("avatarUrl").getValue(String.class);
 
                             if (username != null && !username.equals(existingChat.getParticipantName())) {
@@ -637,7 +671,6 @@ public class HomeFragment extends Fragment {
                 Boolean online = snapshot.getValue(Boolean.class);
                 boolean newStatus = online != null && online;
 
-                // Находим актуальный чат по chatId
                 Chat existingChat = loadedChats.get(chatId);
                 if (existingChat != null && existingChat.isOnline() != newStatus) {
                     existingChat.setOnline(newStatus);
@@ -655,9 +688,8 @@ public class HomeFragment extends Fragment {
     }
 
     private void updateSingleChat(Chat updatedChat) {
-        if (adapter != null && getActivity() != null) {
+        if (adapter != null && getActivity() != null && !isUpdating) {
             getActivity().runOnUiThread(() -> {
-                // Находим позицию чата в текущем списке
                 List<Chat> currentChats = adapter.getChats();
                 int position = -1;
                 for (int i = 0; i < currentChats.size(); i++) {
@@ -674,8 +706,6 @@ public class HomeFragment extends Fragment {
         }
     }
 
-    // Обновление информации о последнем сообщении с проверкой изменений
-    // Обновление информации о последнем сообщении с проверкой изменений
     private void updateLastMessageInfo(DataSnapshot chatSnapshot, Chat chat) {
         String lastMessage = "Нет сообщений";
         long lastTimestamp = 0;
@@ -723,10 +753,8 @@ public class HomeFragment extends Fragment {
             }
         }
 
-        // Проверяем изменения - ИСПРАВЛЕНО: используем TextUtils.equals()
         boolean changed = false;
 
-        // ИСПРАВЛЕНО: безопасное сравнение строк
         if (!TextUtils.equals(chat.getLastMessage(), lastMessage)) {
             chat.setLastMessage(lastMessage);
             changed = true;
@@ -761,7 +789,6 @@ public class HomeFragment extends Fragment {
             changed = true;
         }
 
-        // Обновляем только если были изменения
         if (changed) {
             updateSingleChat(chat);
         }
@@ -926,39 +953,40 @@ public class HomeFragment extends Fragment {
         });
     }
 
-    @Override
-    public void onResume() {
-        super.onResume();
-        if (dataLoaded && adapter != null) {
-            // Обновляем только непрочитанные счетчики
-            for (Chat chat : loadedChats.values()) {
-                if (chat.getUnreadCount() > 0) {
-                    updateSingleChat(chat);
-                }
-            }
-        }
-    }
+//    @Override
+//    public void onResume() {
+//        super.onResume();
+//        if (dataLoaded && adapter != null) {
+//            for (Chat chat : loadedChats.values()) {
+//                if (chat.getUnreadCount() > 0) {
+//                    updateSingleChat(chat);
+//                }
+//            }
+//        }
+//    }
 
-    @Override
-    public void onDestroyView() {
-        super.onDestroyView();
-        if (chatsListener != null) {
-            databaseReference.child("chats").removeEventListener(chatsListener);
-        }
-        if (groupsListener != null) {
-            databaseReference.child("groups").removeEventListener(groupsListener);
-        }
-        for (Map.Entry<String, ValueEventListener> entry : onlineListeners.entrySet()) {
-            databaseReference.child("users").child(entry.getKey()).child("online")
-                    .removeEventListener(entry.getValue());
-        }
-        for (Map.Entry<String, ValueEventListener> entry : chatMessageListeners.entrySet()) {
-            databaseReference.child("chats").child(entry.getKey()).child("messages")
-                    .removeEventListener(entry.getValue());
-        }
-        onlineListeners.clear();
-        chatMessageListeners.clear();
-        userInfoLoaded.clear();
-        dataLoaded = false;
-    }
+//    @Override
+//    public void onDestroyView() {
+//        super.onDestroyView();
+//        if (chatsListener != null) {
+//            databaseReference.child("chats").removeEventListener(chatsListener);
+//        }
+//        if (groupsListener != null) {
+//            databaseReference.child("groups").removeEventListener(groupsListener);
+//        }
+//        for (Map.Entry<String, ValueEventListener> entry : onlineListeners.entrySet()) {
+//            databaseReference.child("users").child(entry.getKey()).child("online")
+//                    .removeEventListener(entry.getValue());
+//        }
+//        for (Map.Entry<String, ValueEventListener> entry : chatMessageListeners.entrySet()) {
+//            databaseReference.child("chats").child(entry.getKey()).child("messages")
+//                    .removeEventListener(entry.getValue());
+//        }
+//        onlineListeners.clear();
+//        chatMessageListeners.clear();
+//        userInfoLoaded.clear();
+//        userNameCache.clear();
+//        userAvatarCache.clear();
+//        dataLoaded = false;
+//    }
 }

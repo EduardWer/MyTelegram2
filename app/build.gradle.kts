@@ -42,6 +42,9 @@ android {
 dependencies {
 
 
+    // WebRTC для аудио/видео звонков
+    implementation("io.getstream:stream-webrtc-android:1.0.1")
+
     // JZVideo плеер
     implementation("cn.jzvd:jiaozivideoplayer:7.7.0")
 

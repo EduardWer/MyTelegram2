@@ -566,7 +566,7 @@ public class GroupInfoActivity extends AppCompatActivity {
             // Проверяем, был ли пользователь удален ранее
             boolean wasRemoved = removedMemberIds != null && removedMemberIds.contains(uid);
             String statusMessage = wasRemoved ?
-                    "♻️ Пользователь возвращён в группу" :
+                    "♻️ Пользователь возвращён в группу"  :
                     "👤 Новый участник добавлен в группу";
 
             // Устанавливаем true (даже если было false)

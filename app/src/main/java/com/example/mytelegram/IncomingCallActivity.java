@@ -19,7 +19,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.bumptech.glide.Glide;
@@ -51,6 +50,8 @@ public class IncomingCallActivity extends AppCompatActivity {
     private Handler vibrationHandler;
     private boolean isVibrating = false;
 
+    private CallManager callManager;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -72,8 +73,12 @@ public class IncomingCallActivity extends AppCompatActivity {
         initViews();
         getIntentData();
         setupUI();
+        initCallManager();
         loadCallerDataFromFirebase();
         startRinging();
+
+        // Добавляем слушатель для отслеживания отмены звонка
+        listenForCallCancellation();
     }
 
     private void initViews() {
@@ -92,11 +97,14 @@ public class IncomingCallActivity extends AppCompatActivity {
         callerId = intent.getStringExtra("caller_id");
         isVideo = intent.getBooleanExtra("is_video", false);
 
-        Log.d(TAG, "callerId=" + callerId + ", callerName=" + callerName);
+        Log.d(TAG, "callId=" + callId + ", callerId=" + callerId + ", callerName=" + callerName);
+    }
+
+    private void initCallManager() {
+        callManager = CallManager.getInstance(this);
     }
 
     private void setupUI() {
-        // Ставим имя из Intent (заглушка, пока не загрузим из Firebase)
         if (callerName != null && !callerName.isEmpty()) {
             callerNameText.setText(callerName);
         } else {
@@ -108,6 +116,36 @@ public class IncomingCallActivity extends AppCompatActivity {
         // Кнопки
         findViewById(R.id.btn_answer).setOnClickListener(v -> answerCall());
         findViewById(R.id.btn_decline).setOnClickListener(v -> declineCall());
+    }
+
+    private void listenForCallCancellation() {
+        if (callId == null) return;
+
+        // Слушаем изменение статуса звонка
+        FirebaseDatabase.getInstance().getReference("calls")
+                .child(callerId)
+                .child(callId)
+                .child("status")
+                .addValueEventListener(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(@NonNull DataSnapshot snapshot) {
+                        String status = snapshot.getValue(String.class);
+                        if ("rejected".equals(status) || "ended".equals(status)) {
+                            Log.d(TAG, "Звонок был отменён или завершён");
+                            runOnUiThread(() -> {
+                                stopRinging();
+                                Toast.makeText(IncomingCallActivity.this,
+                                        "Звонок отменён", Toast.LENGTH_SHORT).show();
+                                finish();
+                            });
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(@NonNull DatabaseError error) {
+                        Log.e(TAG, "Ошибка отслеживания статуса: " + error.getMessage());
+                    }
+                });
     }
 
     private void loadCallerDataFromFirebase() {
@@ -123,12 +161,8 @@ public class IncomingCallActivity extends AppCompatActivity {
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        Log.d(TAG, "Users snapshot exists: " + snapshot.exists());
-
                         if (snapshot.exists()) {
                             String username = snapshot.child("username").getValue(String.class);
-                            Log.d(TAG, "Username из Firebase: " + username);
-
                             if (username != null && !username.isEmpty()) {
                                 callerNameText.setText(username);
                             }
@@ -137,8 +171,6 @@ public class IncomingCallActivity extends AppCompatActivity {
                                 callerUsernameText.setText("@" + username);
                                 callerUsernameText.setVisibility(View.VISIBLE);
                             }
-                        } else {
-                            Log.e(TAG, "Пользователь не найден в /users/" + callerId);
                         }
                     }
 
@@ -148,52 +180,45 @@ public class IncomingCallActivity extends AppCompatActivity {
                     }
                 });
 
-        // 2. Загружаем аватар из /avatars/{callerId}
-        FirebaseDatabase.getInstance().getReference("avatars").child(callerId)
+        // 2. Загружаем аватар из /users/{callerId}/avatarUrl
+        FirebaseDatabase.getInstance().getReference("users").child(callerId)
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
-                        Log.d(TAG, "Avatars snapshot exists: " + snapshot.exists());
-
                         if (snapshot.exists()) {
-                            String avatarUrl = snapshot.getValue(String.class);
-                            Log.d(TAG, "Avatar URL из Firebase: " + avatarUrl);
-
+                            String avatarUrl = snapshot.child("avatarUrl").getValue(String.class);
                             if (avatarUrl != null && !avatarUrl.isEmpty()) {
-                                // Загружаем аватар
                                 Glide.with(IncomingCallActivity.this)
                                         .load(avatarUrl)
                                         .placeholder(R.drawable.ic_person)
                                         .error(R.drawable.ic_person)
                                         .into(callerAvatar);
-
-                                // Загружаем фон
                                 Glide.with(IncomingCallActivity.this)
                                         .load(avatarUrl)
                                         .placeholder(R.drawable.ic_person)
                                         .error(R.drawable.ic_person)
                                         .into(backgroundAvatar);
-
-                                Log.d(TAG, "Аватар успешно загружен через Glide");
                             }
-                        } else {
-                            Log.e(TAG, "Аватар не найден в /avatars/" + callerId);
                         }
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
-                        Log.e(TAG, "Ошибка загрузки avatars: " + error.getMessage());
+                        Log.e(TAG, "Ошибка загрузки аватара: " + error.getMessage());
                     }
                 });
     }
 
     private void startRinging() {
         // Рингтон
-        Uri ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-        ringtone = RingtoneManager.getRingtone(this, ringtoneUri);
-        if (ringtone != null) {
-            ringtone.play();
+        try {
+            Uri ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            ringtone = RingtoneManager.getRingtone(this, ringtoneUri);
+            if (ringtone != null) {
+                ringtone.play();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Ошибка воспроизведения рингтона: " + e.getMessage());
         }
 
         // Вибрация
@@ -238,17 +263,25 @@ public class IncomingCallActivity extends AppCompatActivity {
     private void answerCall() {
         stopRinging();
 
+        // Убираем уведомление
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (callId != null) {
             manager.cancel(callId.hashCode());
         }
 
+        // Сообщаем CallManager о ответе
+        if (callManager != null) {
+            callManager.answerCall(callId);
+        }
+
+        // Открываем CallActivity
         Intent intent = new Intent(this, CallActivity.class);
         intent.putExtra("call_id", callId);
         intent.putExtra("room_name", roomName);
         intent.putExtra("caller_name", callerNameText.getText().toString());
         intent.putExtra("caller_id", callerId);
         intent.putExtra("is_video", isVideo);
+        intent.putExtra("is_outgoing", false);
         intent.putExtra("action", "ANSWER");
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         startActivity(intent);
@@ -258,9 +291,15 @@ public class IncomingCallActivity extends AppCompatActivity {
     private void declineCall() {
         stopRinging();
 
+        // Убираем уведомление
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (callId != null) {
             manager.cancel(callId.hashCode());
+        }
+
+        // Уведомляем CallManager об отклонении
+        if (callManager != null) {
+            callManager.declineCall(callId);
         }
 
         Toast.makeText(this, "Звонок отклонён", Toast.LENGTH_SHORT).show();

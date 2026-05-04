@@ -17,17 +17,21 @@
 
     <!-- Затемнение -->
     <View
+        android:id="@+id/dim_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="#80000000" />
 
-    <!-- Верхняя часть: информация о звонящем -->
+    <!-- Информация о звонящем (для аудио звонков) -->
     <LinearLayout
+        android:id="@+id/caller_info"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="80dp"
+        android:layout_centerInParent="true"
         android:orientation="vertical"
-        android:gravity="center_horizontal">
+        android:gravity="center"
+        android:paddingHorizontal="24dp"
+        android:visibility="visible">
 
         <!-- Аватар звонящего -->
         <de.hdodenhof.circleimageview.CircleImageView
@@ -68,8 +72,9 @@
             android:layout_marginTop="8dp"
             android:text="00:00"
             android:textColor="#FFFFFF"
-            android:textSize="24sp"
-            android:fontFamily="monospace" />
+            android:textSize="32sp"
+            android:fontFamily="monospace"
+            android:visibility="visible" />
 
     </LinearLayout>
 
@@ -100,6 +105,7 @@
                 android:src="@drawable/ic_speaker"
                 android:background="@drawable/circle_button_bg"
                 android:contentDescription="Динамик"
+                android:padding="12dp"
                 app:tint="#FFFFFF" />
 
             <TextView
@@ -126,6 +132,7 @@
                 android:src="@drawable/ic_microphone"
                 android:background="@drawable/circle_button_bg"
                 android:contentDescription="Микрофон"
+                android:padding="12dp"
                 app:tint="#FFFFFF" />
 
             <TextView
@@ -152,6 +159,7 @@
                 android:src="@drawable/ic_video_call"
                 android:background="@drawable/circle_button_bg"
                 android:contentDescription="Видео"
+                android:padding="12dp"
                 app:tint="#FFFFFF" />
 
             <TextView
@@ -178,6 +186,7 @@
                 android:src="@drawable/ic_call"
                 android:background="@drawable/decline_button_bg"
                 android:contentDescription="Завершить"
+                android:padding="12dp"
                 app:tint="#FFFFFF" />
 
             <TextView
@@ -199,7 +208,7 @@
         android:visibility="gone">
 
         <!-- Видео собеседника (на весь экран) -->
-        <SurfaceView
+        <org.webrtc.SurfaceViewRenderer
             android:id="@+id/remote_video_view"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
@@ -214,7 +223,7 @@
             android:background="#000000"
             android:visibility="gone">
 
-            <SurfaceView
+            <org.webrtc.SurfaceViewRenderer
                 android:id="@+id/local_video_view"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
@@ -231,47 +240,50 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_alignParentBottom="true"
-            android:layout_marginBottom="20dp"
-            android:orientation="horizontal"
+            android:layout_gravity="bottom"
+            android:layout_marginBottom="40dp"
             android:gravity="center"
-            android:paddingHorizontal="20dp"
-            android:layout_gravity="bottom">
+            android:orientation="horizontal"
+            android:paddingHorizontal="20dp">
 
             <ImageButton
                 android:id="@+id/btn_video_speaker"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
                 android:layout_margin="8dp"
-                android:src="@drawable/ic_speaker"
                 android:background="@drawable/circle_button_bg"
+                android:padding="12dp"
+                android:src="@drawable/ic_speaker"
                 app:tint="#FFFFFF" />
 
             <ImageButton
                 android:id="@+id/btn_video_mute"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
                 android:layout_margin="8dp"
-                android:src="@drawable/ic_microphone"
                 android:background="@drawable/circle_button_bg"
+                android:padding="12dp"
+                android:src="@drawable/ic_microphone"
                 app:tint="#FFFFFF" />
 
             <ImageButton
                 android:id="@+id/btn_switch_camera"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
                 android:layout_margin="8dp"
-                android:src="@drawable/ic_switch_camera"
                 android:background="@drawable/circle_button_bg"
+                android:padding="12dp"
+                android:src="@drawable/ic_switch_camera"
                 app:tint="#FFFFFF" />
 
             <ImageButton
                 android:id="@+id/btn_video_end_call"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
                 android:layout_margin="8dp"
-                android:src="@drawable/ic_call"
                 android:background="@drawable/decline_button_bg"
+                android:padding="12dp"
+                android:src="@drawable/ic_call"
                 app:tint="#FFFFFF" />
 
         </LinearLayout>
