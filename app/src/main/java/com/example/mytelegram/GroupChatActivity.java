@@ -159,6 +159,7 @@ public class GroupChatActivity extends AppCompatActivity {
         initViews();
         setupRecyclerView();
         setupClickListeners();
+        markAllMessagesAsRead();
         loadGroupInfo();
         loadMessages();
     }
@@ -950,10 +951,7 @@ public class GroupChatActivity extends AppCompatActivity {
     }
 
     // Сохраняем флаг, что сообщения уже были отмечены как прочитанные
-    private void markAllMessagesAsReadCompleted() {
-        SharedPreferences prefs = getSharedPreferences("chat_prefs", MODE_PRIVATE);
-        prefs.edit().putBoolean("messages_read_" + chatId, true).apply();
-    }
+
 
     // Проверяем, нужно ли отмечать сообщения как прочитанные
     private boolean shouldMarkMessagesAsRead() {

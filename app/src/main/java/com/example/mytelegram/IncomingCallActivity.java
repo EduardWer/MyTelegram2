@@ -261,20 +261,27 @@ public class IncomingCallActivity extends AppCompatActivity {
     }
 
     private void answerCall() {
+            // ✅ СНАЧАЛА установить активный звонок
+            callManager.setActiveCall(callId, callerId, callerName, isVideo, false);
+            // ✅ ПОТОМ ответить
+            callManager.answerCall(callId);
+            // ✅ ЗАТЕМ открыть CallActivity
+
+        Log.d(TAG, "Answering call: callId=" + callId + ", callerId=" + callerId);
+
         stopRinging();
 
-        // Убираем уведомление
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (callId != null) {
             manager.cancel(callId.hashCode());
         }
 
-        // Сообщаем CallManager о ответе
+        // ✅ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ
         if (callManager != null) {
+            callManager.setActiveCall(callId, callerId, callerName, isVideo, false);
             callManager.answerCall(callId);
         }
 
-        // Открываем CallActivity
         Intent intent = new Intent(this, CallActivity.class);
         intent.putExtra("call_id", callId);
         intent.putExtra("room_name", roomName);

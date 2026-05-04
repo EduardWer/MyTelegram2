@@ -953,40 +953,40 @@ public class HomeFragment extends Fragment {
         });
     }
 
-//    @Override
-//    public void onResume() {
-//        super.onResume();
-//        if (dataLoaded && adapter != null) {
-//            for (Chat chat : loadedChats.values()) {
-//                if (chat.getUnreadCount() > 0) {
-//                    updateSingleChat(chat);
-//                }
-//            }
-//        }
-//    }
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (dataLoaded && adapter != null) {
+            for (Chat chat : loadedChats.values()) {
+                if (chat.getUnreadCount() > 0) {
+                    updateSingleChat(chat);
+                }
+            }
+        }
+    }
 
-//    @Override
-//    public void onDestroyView() {
-//        super.onDestroyView();
-//        if (chatsListener != null) {
-//            databaseReference.child("chats").removeEventListener(chatsListener);
-//        }
-//        if (groupsListener != null) {
-//            databaseReference.child("groups").removeEventListener(groupsListener);
-//        }
-//        for (Map.Entry<String, ValueEventListener> entry : onlineListeners.entrySet()) {
-//            databaseReference.child("users").child(entry.getKey()).child("online")
-//                    .removeEventListener(entry.getValue());
-//        }
-//        for (Map.Entry<String, ValueEventListener> entry : chatMessageListeners.entrySet()) {
-//            databaseReference.child("chats").child(entry.getKey()).child("messages")
-//                    .removeEventListener(entry.getValue());
-//        }
-//        onlineListeners.clear();
-//        chatMessageListeners.clear();
-//        userInfoLoaded.clear();
-//        userNameCache.clear();
-//        userAvatarCache.clear();
-//        dataLoaded = false;
-//    }
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        if (chatsListener != null) {
+            databaseReference.child("chats").removeEventListener(chatsListener);
+        }
+        if (groupsListener != null) {
+            databaseReference.child("groups").removeEventListener(groupsListener);
+        }
+        for (Map.Entry<String, ValueEventListener> entry : onlineListeners.entrySet()) {
+            databaseReference.child("users").child(entry.getKey()).child("online")
+                    .removeEventListener(entry.getValue());
+        }
+        for (Map.Entry<String, ValueEventListener> entry : chatMessageListeners.entrySet()) {
+            databaseReference.child("chats").child(entry.getKey()).child("messages")
+                    .removeEventListener(entry.getValue());
+        }
+        onlineListeners.clear();
+        chatMessageListeners.clear();
+        userInfoLoaded.clear();
+        userNameCache.clear();
+        userAvatarCache.clear();
+        dataLoaded = false;
+    }
 }

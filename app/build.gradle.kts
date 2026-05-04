@@ -63,6 +63,10 @@ dependencies {
     implementation ("com.google.firebase:firebase-analytics:21.5.1")
 
 
+    implementation ("org.java-websocket:Java-WebSocket:1.5.6")
+    implementation ("com.google.code.gson:gson:2.10.1")
+
+
     implementation(libs.appcompat)
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
     implementation("androidx.recyclerview:recyclerview:1.3.2")

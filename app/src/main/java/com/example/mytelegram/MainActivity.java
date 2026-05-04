@@ -153,6 +153,94 @@ public class MainActivity extends AppCompatActivity {
                 PERMISSION_NOTIFICATION_REQUEST_CODE);
     }
 
+
+
+    private AlertDialog currentCallDialog;
+
+    private void showIncomingCallDialog(String callId, String callerId, String callerName,
+                                        String roomName, boolean isVideo) {
+        if (currentCallDialog != null && currentCallDialog.isShowing()) {
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("📞 Входящий звонок");
+        builder.setMessage(callerName + (isVideo ? " (Видео)" : " (Аудио)"));
+        builder.setPositiveButton("Ответить", (dialog, which) -> {
+            acceptCall(callId, callerId, callerName, roomName, isVideo);
+        });
+        builder.setNegativeButton("Отклонить", (dialog, which) -> {
+            rejectCall(callId, callerId);
+        });
+        builder.setCancelable(false);
+
+        currentCallDialog = builder.create();
+        currentCallDialog.show();
+    }
+
+    private void acceptCall(String callId, String callerId, String callerName,
+                            String roomName, boolean isVideo) {
+        // Обновляем статус звонка
+        FirebaseDatabase.getInstance().getReference("calls")
+                .child(callId)
+                .child("status")
+                .setValue("accepted");
+
+        // Открываем CallActivity
+        Intent intent = new Intent(this, CallActivity.class);
+        intent.putExtra("call_id", callId);
+        intent.putExtra("room_name", roomName);
+        intent.putExtra("caller_id", callerId);
+        intent.putExtra("caller_name", callerName);
+        intent.putExtra("is_video", isVideo);
+        intent.putExtra("is_outgoing", false);
+        startActivity(intent);
+    }
+
+    private void rejectCall(String callId, String callerId) {
+        FirebaseDatabase.getInstance().getReference("calls")
+                .child(callId)
+                .child("status")
+                .setValue("rejected");
+    }
+
+    private DatabaseReference callsRef;
+    private ValueEventListener incomingCallListener;
+
+    private void listenForIncomingCalls() {
+        callsRef = FirebaseDatabase.getInstance().getReference("calls");
+
+        incomingCallListener = new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                for (DataSnapshot callSnapshot : snapshot.getChildren()) {
+                    String callId = callSnapshot.getKey();
+                    String calleeId = callSnapshot.child("calleeId").getValue(String.class);
+                    String callerId = callSnapshot.child("callerId").getValue(String.class);
+                    String callerName = callSnapshot.child("callerName").getValue(String.class);
+                    String roomName = callSnapshot.child("roomName").getValue(String.class);
+                    Boolean isVideo = callSnapshot.child("isVideo").getValue(Boolean.class);
+                    String status = callSnapshot.child("status").getValue(String.class);
+
+                    // Проверяем, что звонок адресован текущему пользователю и еще не обработан
+                    if (calleeId != null && calleeId.equals(currentUserId) &&
+                            "calling".equals(status) && !ChatActivity.isVisible()) {
+
+                        showIncomingCallDialog(callId, callerId, callerName, roomName, isVideo != null && isVideo);
+                        break;
+                    }
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "Error listening for calls: " + error.getMessage());
+            }
+        };
+
+        callsRef.addValueEventListener(incomingCallListener);
+    }
+
     // ==================== FCM ====================
 
     private void setupFirebaseMessaging() {

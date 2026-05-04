@@ -66,6 +66,7 @@ import com.google.firebase.database.ServerValue;
 import com.google.firebase.database.ValueEventListener;
 import com.google.firebase.messaging.FirebaseMessaging;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -86,6 +87,14 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 public class ChatActivity extends AppCompatActivity {
     private static final String TAG = "ChatActivity";
@@ -347,6 +356,8 @@ public class ChatActivity extends AppCompatActivity {
     }
 
 
+
+
     private void makeCall(boolean isVideo) {
         if (chatId == null || currentUserId == null) {
             Toast.makeText(this, "Ошибка: неизвестный получатель", Toast.LENGTH_SHORT).show();
@@ -356,51 +367,135 @@ public class ChatActivity extends AppCompatActivity {
         String callId = "call_" + System.currentTimeMillis();
         String roomName = "room_" + chatId + "_" + System.currentTimeMillis();
 
-        // Отправляем push-уведомление о звонке
-        ApiClient.sendCallToUser(
-                recipientId,           // user_id (получатель)
-                currentUserId,    // caller_id
-                recipientName,         // caller_name
-                "incoming",       // call_type
-                callId,           // call_id
-                roomName,         // room_name
-                isVideo           // is_video
-        );
+        // Отправляем push-уведомление о звонке (через Firebase)
+        sendCallNotification(callId, roomName, isVideo);
 
         // Открываем активити звонка
         Intent intent = new Intent(this, CallActivity.class);
         intent.putExtra("call_id", callId);
         intent.putExtra("room_name", roomName);
+        intent.putExtra("caller_id", recipientId);
+        intent.putExtra("caller_name", recipientName);
         intent.putExtra("is_video", isVideo);
-        intent.putExtra("target_user_id", chatId);
-        intent.putExtra("target_user_name", recipientName);
+        intent.putExtra("is_outgoing", true);
+
+        // ВАЖНО: Не вызывайте finish() здесь!
         startActivity(intent);
     }
 
+    private void sendCallNotification(String callId, String roomName, boolean isVideo) {
+        try {
+            // Сохраняем в Firebase для истории
+            DatabaseReference callRef = FirebaseDatabase.getInstance()
+                    .getReference("calls")
+                    .child(callId);
 
+            Map<String, Object> callData = new HashMap<>();
+            callData.put("callerId", currentUserId);
+            callData.put("callerName", currentUser.getDisplayName());
+            callData.put("calleeId", recipientId);
+            callData.put("calleeName", recipientName);
+            callData.put("roomName", roomName);
+            callData.put("isVideo", isVideo);
+            callData.put("status", "calling");
+            callData.put("timestamp", System.currentTimeMillis());
 
+            callRef.setValue(callData);
 
+            // Отправляем push через ваш сервер
+            sendPushCallNotification(callId, roomName, isVideo);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    private void openMediaPanel() {
-        mediaPanelLayout.setVisibility(View.VISIBLE);
-        // Скрываем клавиатуру если открыта
-        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-        imm.hideSoftInputFromWindow(messageEditText.getWindowToken(), 0);
+        } catch (Exception e) {
+            Log.e(TAG, "Error creating notification: " + e.getMessage());
+        }
     }
+
+    private void sendPushCallNotification(String callId, String roomName, boolean isVideo) {
+        // Получаем FCM токен получателя из Firebase
+        DatabaseReference userRef = FirebaseDatabase.getInstance()
+                .getReference("users")
+                .child(recipientId)
+                .child("fcmTokens");
+
+        userRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                String fcmToken = snapshot.getValue(String.class);
+
+                if (fcmToken != null && !fcmToken.isEmpty()) {
+                    // Отправляем запрос на ваш push-сервер
+                    sendCallToPushServer(fcmToken, callId, roomName, isVideo);
+                } else {
+                    Log.e(TAG, "No FCM token found for user: " + recipientId);
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                Log.e(TAG, "Error getting FCM token: " + error.getMessage());
+            }
+        });
+    }
+
+    private void sendCallToPushServer(String fcmToken, String callId, String roomName, boolean isVideo) {
+        try {
+            OkHttpClient client = new OkHttpClient();
+
+            JSONObject json = new JSONObject();
+            json.put("token", fcmToken);
+            json.put("caller_id", currentUserId);
+            json.put("caller_name", currentUser.getDisplayName());
+            json.put("call_type", "incoming");
+            json.put("call_id", callId);
+            json.put("room_name", roomName);
+            json.put("is_video", isVideo);
+
+            RequestBody body = RequestBody.create(
+                    json.toString(),
+                    MediaType.parse("application/json; charset=utf-8")
+            );
+
+            Request request = new Request.Builder()
+                    .url("http://192.168.31.163:8000/send-call") // Замените на IP вашего сервера
+                    .post(body)
+                    .build();
+
+            client.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    Log.e(TAG, "Push server error: " + e.getMessage());
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    Log.d(TAG, "Push sent: " + response.code());
+                }
+            });
+
+        } catch (JSONException e) {
+            Log.e(TAG, "Error building push request: " + e.getMessage());
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     public void closeMediaPanel() {
         if (bottomSheetBehavior != null) {
@@ -661,28 +756,6 @@ public class ChatActivity extends AppCompatActivity {
     }
 
 
-    private void toggleBottomSheet() {
-        if (bottomSheetBehavior.getState() == BottomSheetBehavior.STATE_HIDDEN) {
-            showBottomSheet();
-        } else {
-            hideBottomSheet();
-        }
-    }
-
-    private void showBottomSheet() {
-        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_COLLAPSED);
-
-        // Скрываем клавиатуру
-        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-        if (imm != null) {
-            imm.hideSoftInputFromWindow(messageEditText.getWindowToken(), 0);
-        }
-    }
-
-    private void hideBottomSheet() {
-        bottomSheetBehavior.setState(BottomSheetBehavior.STATE_HIDDEN);
-    }
-
 
 
 
@@ -745,25 +818,8 @@ public class ChatActivity extends AppCompatActivity {
 
 
 
-    private void pickImageFromGallery() {
-        Intent intent = new Intent(Intent.ACTION_PICK);
-        intent.setType("image/*");
-        startActivityForResult(intent, REQUEST_IMAGE_PICK);
-    }
 
-    private void takePhoto() {
-        Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
-            File photoFile = createImageFile();
-            if (photoFile != null) {
-                Uri photoURI = FileProvider.getUriForFile(this,
-                        getApplicationContext().getPackageName() + ".fileprovider",
-                        photoFile);
-                takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI);
-                startActivityForResult(takePictureIntent, REQUEST_IMAGE_CAPTURE);
-            }
-        }
-    }
+
 
 
 
@@ -780,19 +836,7 @@ public class ChatActivity extends AppCompatActivity {
         }
     }
 
-    private File createImageFile() {
-        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
-        String imageFileName = "JPEG_" + timeStamp + "_";
-        File storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES);
-        File image = null;
-        try {
-            image = File.createTempFile(imageFileName, ".jpg", storageDir);
-            currentFileUri = Uri.fromFile(image);
-        } catch (IOException e) {
-            Log.e(TAG, "Ошибка создания файла: " + e.getMessage());
-        }
-        return image;
-    }
+
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -2539,8 +2583,5 @@ public class ChatActivity extends AppCompatActivity {
             }
         }
     }
-
-
-
 
 }

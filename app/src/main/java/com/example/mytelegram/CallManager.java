@@ -23,11 +23,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * CallManager - управление звонками, интеграция с Firebase и сервером
+ * CallManager - управление звонками, интеграция с Firebase
  */
 public class CallManager {
 
     private static final String TAG = "CallManager";
+    private static final String PUSH_SERVER_URL = "http://192.168.31.163:8000"; // Замените на ваш IP
 
     private static CallManager instance;
 
@@ -59,6 +60,8 @@ public class CallManager {
         ENDED           // Звонок завершен
     }
 
+
+
     private CallState callState = CallState.IDLE;
 
     // Callbacks
@@ -72,6 +75,8 @@ public class CallManager {
         void onCallEnded(String callId);
         void onError(String error);
     }
+
+
 
     public interface CallDataCallback {
         void onOfferReceived(String callId, String sdp);
@@ -108,10 +113,8 @@ public class CallManager {
 
         if (firebaseAuth.getCurrentUser() != null) {
             this.currentUserId = firebaseAuth.getCurrentUser().getUid();
+            loadUserName();
         }
-
-        // Загружаем имя пользователя
-        loadUserName();
     }
 
     public static synchronized CallManager getInstance(Context context) {
@@ -124,19 +127,22 @@ public class CallManager {
     private void loadUserName() {
         if (currentUserId == null) return;
 
-        firebaseDatabase.getReference("users").child(currentUserId)
+        firebaseDatabase.getReference("users").child(currentUserId).child("username")
                 .addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(DataSnapshot snapshot) {
                         if (snapshot.exists()) {
-                            currentUserName = snapshot.child("username").getValue(String.class);
+                            currentUserName = snapshot.getValue(String.class);
                             Log.d(TAG, "Имя пользователя загружено: " + currentUserName);
+                        } else {
+                            currentUserName = currentUserId.substring(0, Math.min(8, currentUserId.length()));
                         }
                     }
 
                     @Override
                     public void onCancelled(DatabaseError error) {
                         Log.e(TAG, "Ошибка загрузки имени: " + error.getMessage());
+                        currentUserName = "Пользователь";
                     }
                 });
     }
@@ -150,23 +156,10 @@ public class CallManager {
             return;
         }
 
-        // Слушаем входящие предложения звонков
         listenForIncomingCalls();
-
-        // Слушаем ответы на звонки
-        listenForCallAnswers();
-
-        // Слушаем ICE кандидаты
+        listenForCallResponses();
         listenForIceCandidates();
-
-        // Слушаем команды завершения звонка
-        listenForCallTermination();
-
-        // НОВЫЕ СЛУШАТЕЛИ ДЛЯ WEBRTC
-        // Слушаем SDP Offer
         listenForOffer();
-
-        // Слушаем SDP Answer
         listenForAnswer();
 
         Log.d(TAG, "CallManager инициализирован для пользователя: " + currentUserId);
@@ -175,60 +168,49 @@ public class CallManager {
     /**
      * Слушаем входящие звонки
      */
-    /**
-     * Слушаем входящие звонки
-     */
     private void listenForIncomingCalls() {
         if (currentUserId == null) return;
 
-        firebaseDatabase.getReference("calls")
-                .child(currentUserId)
+        firebaseDatabase.getReference("calls").child(currentUserId)
                 .addChildEventListener(new ChildEventListener() {
                     @Override
                     public void onChildAdded(DataSnapshot snapshot, String previousChildName) {
                         String callId = snapshot.getKey();
                         if (callId == null) return;
 
-                        String type = snapshot.child("type").getValue(String.class);
                         String status = snapshot.child("status").getValue(String.class);
+                        String fromUserId = snapshot.child("callerId").getValue(String.class);
+                        String fromUserName = snapshot.child("callerName").getValue(String.class);
+                        Boolean isVideo = snapshot.child("isVideo").getValue(Boolean.class);
 
-                        // Пропускаем, если это не новый входящий звонок
-                        if (!"incoming".equals(type) || !"initiated".equals(status)) {
-                            return;
+                        // Только новые входящие звонки
+                        if ("calling".equals(status) && fromUserId != null && !fromUserId.equals(currentUserId)) {
+                            Log.d(TAG, "📞 Входящий звонок: callId=" + callId + ", from=" + fromUserName);
+
+                            CallInfo callInfo = new CallInfo(
+                                    callId,
+                                    snapshot.child("roomName").getValue(String.class),
+                                    fromUserId,
+                                    fromUserName != null ? fromUserName : "Неизвестный",
+                                    isVideo != null && isVideo,
+                                    false,
+                                    "incoming"
+                            );
+
+                            activeCallId = callId;
+                            activeRoomName = callInfo.roomName;
+                            activeCallerId = fromUserId;
+                            activeCallerName = callInfo.callerName;
+                            activeIsVideo = callInfo.isVideo;
+                            activeIsOutgoing = false;
+                            callState = CallState.INCOMING;
+
+                            if (stateCallback != null) {
+                                mainHandler.post(() -> stateCallback.onIncomingCall(callInfo));
+                            }
+
+                            showIncomingCallNotification(callInfo);
                         }
-
-                        String fromUserId = snapshot.child("fromUserId").getValue(String.class);
-                        String fromUserName = snapshot.child("fromUserName").getValue(String.class);
-                        boolean isVideo = snapshot.child("isVideo").getValue(Boolean.class) == Boolean.TRUE;
-
-                        Log.d(TAG, "Входящий звонок: callId=" + callId +
-                                ", from=" + fromUserName + ", video=" + isVideo);
-
-                        CallInfo callInfo = new CallInfo(
-                                callId,
-                                "call_" + callId,
-                                fromUserId,
-                                fromUserName != null ? fromUserName : "Неизвестный",
-                                isVideo,
-                                false,
-                                "incoming"
-                        );
-
-                        // Сохраняем информацию о звонке
-                        activeCallId = callId;
-                        activeRoomName = callInfo.roomName;
-                        activeCallerId = fromUserId;
-                        activeCallerName = fromUserName;
-                        activeIsVideo = isVideo;
-                        activeIsOutgoing = false;
-                        callState = CallState.INCOMING;
-
-                        if (stateCallback != null) {
-                            mainHandler.post(() -> stateCallback.onIncomingCall(callInfo));
-                        }
-
-                        // Показываем уведомление о входящем звонке
-                        showIncomingCallNotification(callInfo);
                     }
 
                     @Override
@@ -236,8 +218,14 @@ public class CallManager {
                         String callId = snapshot.getKey();
                         String status = snapshot.child("status").getValue(String.class);
 
-                        if ("rejected".equals(status) || "ended".equals(status)) {
+                        if ("answered".equals(status) && activeCallId != null && activeCallId.equals(callId)) {
+                            Log.d(TAG, "✅ Звонок принят: " + callId);
+                            callState = CallState.ACTIVE;
                             if (stateCallback != null) {
+                                mainHandler.post(() -> stateCallback.onCallStateChanged(CallState.ACTIVE));
+                            }
+                        } else if ("rejected".equals(status) || "ended".equals(status)) {
+                            if (stateCallback != null && activeCallId != null && activeCallId.equals(callId)) {
                                 mainHandler.post(() -> stateCallback.onCallEnded(callId));
                             }
                             clearActiveCall();
@@ -246,15 +234,11 @@ public class CallManager {
 
                     @Override
                     public void onChildRemoved(DataSnapshot snapshot) {
-                        String callId = snapshot.getKey();
-                        Log.d(TAG, "Звонок удалён: " + callId);
                         clearActiveCall();
                     }
 
                     @Override
-                    public void onChildMoved(DataSnapshot snapshot, String previousChildName) {
-                        // Не используется для звонков
-                    }
+                    public void onChildMoved(DataSnapshot snapshot, String previousChildName) {}
 
                     @Override
                     public void onCancelled(DatabaseError error) {
@@ -263,188 +247,157 @@ public class CallManager {
                 });
     }
 
+
+
+
+    /**
+     * Проверка, онлайн ли пользователь через Firebase
+     */
+    public void checkUserOnline(String userId, OnlineStatusCallback callback) {
+        if (userId == null) {
+            callback.onResult(false);
+            return;
+        }
+
+        firebaseDatabase.getReference("users").child(userId).child("online")
+                .addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(DataSnapshot snapshot) {
+                        Boolean isOnline = snapshot.getValue(Boolean.class);
+                        callback.onResult(isOnline != null && isOnline);
+                    }
+
+                    @Override
+                    public void onCancelled(DatabaseError error) {
+                        Log.e(TAG, "Error checking online status: " + error.getMessage());
+                        callback.onResult(false);
+                    }
+                });
+    }
+
+
+
+
+
+
+    public interface OnlineStatusCallback {
+        void onResult(boolean isOnline);
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     /**
      * Слушаем ответы на исходящие звонки
      */
-    /**
-     * Слушаем ответы на исходящие звонки
-     */
-    private void listenForCallAnswers() {
+    private void listenForCallResponses() {
         if (currentUserId == null) return;
 
-        firebaseDatabase.getReference("calls")
-                .child(currentUserId)
+        firebaseDatabase.getReference("calls").child(currentUserId)
                 .addChildEventListener(new ChildEventListener() {
                     @Override
-                    public void onChildAdded(DataSnapshot snapshot, String previousChildName) {
+                    public void onChildChanged(DataSnapshot snapshot, String previousChildName) {
                         String callId = snapshot.getKey();
-                        if (callId == null) return;
-
-                        String type = snapshot.child("type").getValue(String.class);
                         String status = snapshot.child("status").getValue(String.class);
 
-                        if ("outgoing".equals(type) && "answered".equals(status)) {
-                            Log.d(TAG, "Исходящий звонок принят: " + callId);
-
-                            String toUserId = snapshot.child("toUserId").getValue(String.class);
-                            String toUserName = snapshot.child("toUserName").getValue(String.class);
-                            boolean isVideo = snapshot.child("isVideo").getValue(Boolean.class) == Boolean.TRUE;
-
-                            CallInfo callInfo = new CallInfo(
-                                    callId,
-                                    "call_" + callId,
-                                    toUserId,
-                                    toUserName != null ? toUserName : "Неизвестный",
-                                    isVideo,
-                                    true,
-                                    "answered"
-                            );
-
-                            activeCallId = callId;
-                            activeRoomName = callInfo.roomName;
-                            activeCallerId = toUserId;
-                            activeCallerName = toUserName;
-                            activeIsVideo = isVideo;
-                            activeIsOutgoing = true;
+                        if ("answered".equals(status) && activeCallId != null && activeCallId.equals(callId)) {
+                            Log.d(TAG, "✅ Исходящий звонок принят: " + callId);
                             callState = CallState.ACTIVE;
-
                             if (stateCallback != null) {
+                                CallInfo callInfo = new CallInfo(
+                                        callId, activeRoomName, activeCallerId,
+                                        activeCallerName, activeIsVideo, true, "answered"
+                                );
                                 mainHandler.post(() -> stateCallback.onCallStarted(callInfo));
                             }
                         }
                     }
 
                     @Override
-                    public void onChildChanged(DataSnapshot snapshot, String previousChildName) {
-                        String callId = snapshot.getKey();
-                        String status = snapshot.child("status").getValue(String.class);
-
-                        if ("ended".equals(status)) {
-                            if (stateCallback != null) {
-                                mainHandler.post(() -> stateCallback.onCallEnded(callId));
-                            }
-                            clearActiveCall();
-                        }
-                    }
-
+                    public void onChildAdded(DataSnapshot snapshot, String previousChildName) {}
                     @Override
-                    public void onChildRemoved(DataSnapshot snapshot) {
-                        String callId = snapshot.getKey();
-                        Log.d(TAG, "Исходящий звонок удалён: " + callId);
-                        clearActiveCall();
-                    }
-
+                    public void onChildRemoved(DataSnapshot snapshot) {}
                     @Override
-                    public void onChildMoved(DataSnapshot snapshot, String previousChildName) {
-                        // Не используется для ответов на звонки
-                    }
-
+                    public void onChildMoved(DataSnapshot snapshot, String previousChildName) {}
                     @Override
-                    public void onCancelled(DatabaseError error) {
-                        Log.e(TAG, "Ошибка прослушивания ответов: " + error.getMessage());
-                    }
+                    public void onCancelled(DatabaseError error) {}
                 });
     }
 
-    /**
-     * Слушаем ICE кандидаты
-     */
     /**
      * Слушаем ICE кандидаты
      */
     private void listenForIceCandidates() {
-        if (currentUserId == null) return;
+        if (currentUserId == null || dataCallback == null) return;
 
-        // Слушаем ICE кандидаты от собеседника
-        firebaseDatabase.getReference("calls")
-                .child(currentUserId)
+        firebaseDatabase.getReference("calls").child(currentUserId)
                 .child("iceCandidates")
                 .addChildEventListener(new ChildEventListener() {
                     @Override
                     public void onChildAdded(DataSnapshot snapshot, String previousChildName) {
-                        if (dataCallback == null) return;
-
                         String candidate = snapshot.child("candidate").getValue(String.class);
                         Long sdpMLineIndex = snapshot.child("sdpMLineIndex").getValue(Long.class);
                         String sdpMid = snapshot.child("sdpMid").getValue(String.class);
 
-                        if (candidate != null && sdpMLineIndex != null) {
+                        if (candidate != null && sdpMLineIndex != null && activeCallId != null) {
                             dataCallback.onIceCandidateReceived(
-                                    snapshot.getKey(),
-                                    candidate,
-                                    sdpMLineIndex.intValue(),
+                                    activeCallId, candidate, sdpMLineIndex.intValue(),
                                     sdpMid != null ? sdpMid : ""
                             );
-                        }
-                    }
-
-                    @Override
-                    public void onChildChanged(DataSnapshot snapshot, String previousChildName) {
-                        // Не используется
-                    }
-
-                    @Override
-                    public void onChildRemoved(DataSnapshot snapshot) {
-                        // TODO: Обработка удаления ICE кандидатов
-                    }
-
-                    @Override
-                    public void onChildMoved(DataSnapshot snapshot, String previousChildName) {
-                        // Не используется для ICE кандидатов
-                    }
-
-                    @Override
-                    public void onCancelled(DatabaseError error) {
-                        Log.e(TAG, "Ошибка прослушивания ICE: " + error.getMessage());
-                    }
-                });
-    }
-
-    /**
-     * Слушаем команды завершения звонка
-     */
-    private void listenForCallTermination() {
-        if (currentUserId == null) return;
-
-        firebaseDatabase.getReference("calls")
-                .child(currentUserId)
-                .child("terminate")
-                .addValueEventListener(new ValueEventListener() {
-                    @Override
-                    public void onDataChange(DataSnapshot snapshot) {
-                        String callId = snapshot.child("callId").getValue(String.class);
-
-                        if (callId != null && dataCallback != null) {
-                            dataCallback.onCallTerminated(callId);
-                            // Удаляем флаг завершения после обработки
                             snapshot.getRef().removeValue();
                         }
                     }
 
                     @Override
+                    public void onChildChanged(DataSnapshot snapshot, String previousChildName) {}
+                    @Override
+                    public void onChildRemoved(DataSnapshot snapshot) {}
+                    @Override
+                    public void onChildMoved(DataSnapshot snapshot, String previousChildName) {}
+                    @Override
                     public void onCancelled(DatabaseError error) {
-                        Log.e(TAG, "Ошибка прослушивания termination: " + error.getMessage());
+                        Log.e(TAG, "Ошибка ICE: " + error.getMessage());
                     }
                 });
     }
 
     /**
-     * НОВЫЙ МЕТОД: Слушаем SDP Offer от собеседника
+     * Слушаем Offer
      */
     private void listenForOffer() {
-        if (currentUserId == null) return;
+        if (currentUserId == null || dataCallback == null) return;
 
-        firebaseDatabase.getReference("calls")
-                .child(currentUserId)
-                .child("offer")
+        firebaseDatabase.getReference("calls").child(currentUserId).child("offer")
                 .addValueEventListener(new ValueEventListener() {
                     @Override
                     public void onDataChange(DataSnapshot snapshot) {
                         String sdp = snapshot.getValue(String.class);
-                        if (sdp != null && dataCallback != null && activeCallId != null) {
-                            Log.d(TAG, "Получен Offer для звонка: " + activeCallId);
+                        if (sdp != null && activeCallId != null) {
+                            Log.d(TAG, "📨 Получен Offer для звонка: " + activeCallId);
                             dataCallback.onOfferReceived(activeCallId, sdp);
-                            // Удаляем offer после обработки
                             snapshot.getRef().removeValue();
                         }
                     }
@@ -457,22 +410,19 @@ public class CallManager {
     }
 
     /**
-     * НОВЫЙ МЕТОД: Слушаем SDP Answer от собеседника
+     * Слушаем Answer
      */
     private void listenForAnswer() {
-        if (currentUserId == null) return;
+        if (currentUserId == null || dataCallback == null) return;
 
-        firebaseDatabase.getReference("calls")
-                .child(currentUserId)
-                .child("answer")
+        firebaseDatabase.getReference("calls").child(currentUserId).child("answer")
                 .addValueEventListener(new ValueEventListener() {
                     @Override
                     public void onDataChange(DataSnapshot snapshot) {
                         String sdp = snapshot.getValue(String.class);
-                        if (sdp != null && dataCallback != null && activeCallId != null) {
-                            Log.d(TAG, "Получен Answer для звонка: " + activeCallId);
+                        if (sdp != null && activeCallId != null) {
+                            Log.d(TAG, "📨 Получен Answer для звонка: " + activeCallId);
                             dataCallback.onAnswerReceived(activeCallId, sdp);
-                            // Удаляем answer после обработки
                             snapshot.getRef().removeValue();
                         }
                     }
@@ -493,30 +443,27 @@ public class CallManager {
             return;
         }
 
-        String callId = UUID.randomUUID().toString();
-        String roomName = "call_" + callId;
+        String callId = "call_" + System.currentTimeMillis();
+        String roomName = "room_" + currentUserId + "_" + targetUserId + "_" + System.currentTimeMillis();
 
-        Log.d(TAG, "Начало исходящего звонка: callId=" + callId + ", target=" + targetUserName);
+        Log.d(TAG, "📞 Начало исходящего звонка: callId=" + callId + ", target=" + targetUserName);
 
-        // Создаем запись звонка в Firebase
         Map<String, Object> callData = new HashMap<>();
-        callData.put("type", "outgoing");
-        callData.put("status", "initiated");
-        callData.put("fromUserId", currentUserId);
-        callData.put("fromUserName", currentUserName != null ? currentUserName : "Unknown");
-        callData.put("toUserId", targetUserId);
-        callData.put("toUserName", targetUserName);
+        callData.put("callerId", currentUserId);
+        callData.put("callerName", currentUserName != null ? currentUserName : "Пользователь");
+        callData.put("calleeId", targetUserId);
+        callData.put("calleeName", targetUserName);
+        callData.put("roomName", roomName);
         callData.put("isVideo", isVideo);
+        callData.put("status", "calling");
         callData.put("timestamp", System.currentTimeMillis());
 
-        // Записываем звонки для обеих сторон
         Map<String, Object> updates = new HashMap<>();
-        updates.put("/calls/" + currentUserId + "/" + callId, callData);
-        updates.put("/calls/" + targetUserId + "/" + callId, callData);
+        updates.put("/calls/" + callId, callData);
 
         firebaseDatabase.getReference().updateChildren(updates)
                 .addOnSuccessListener(aVoid -> {
-                    Log.d(TAG, "Звонок создан в Firebase: " + callId);
+                    Log.d(TAG, "✅ Звонок создан в Firebase: " + callId);
 
                     activeCallId = callId;
                     activeRoomName = roomName;
@@ -530,11 +477,10 @@ public class CallManager {
                         mainHandler.post(() -> stateCallback.onCallStateChanged(CallState.OUTGOING));
                     }
 
-                    // Отправляем push-уведомление через сервер
-                    sendCallNotification(targetUserId, callId, targetUserName, isVideo, "outgoing");
+                    sendCallNotification(targetUserId, callId, targetUserName, isVideo);
                 })
                 .addOnFailureListener(e -> {
-                    Log.e(TAG, "Ошибка создания звонка: " + e.getMessage());
+                    Log.e(TAG, "❌ Ошибка создания звонка: " + e.getMessage());
                     if (stateCallback != null) {
                         mainHandler.post(() -> stateCallback.onError("Ошибка создания звонка: " + e.getMessage()));
                     }
@@ -542,36 +488,35 @@ public class CallManager {
     }
 
     /**
-     * Ответ на входящий звонок (ИСПРАВЛЕНО - обновляем обе стороны)
+     * Ответ на входящий звонок
      */
     public void answerCall(String callId) {
-        Log.d(TAG, "Ответ на звонок: " + callId);
+        Log.d(TAG, "✅ Ответ на звонок: " + callId);
 
         if (activeCallerId == null) {
             Log.e(TAG, "activeCallerId is null, cannot answer call");
+            // Пытаемся получить из активного звонка
+
+            if (this.activeCallId != null && this.activeCallId.equals(callId)) {
+                Log.d(TAG, "activeCallId matches, but activeCallerId is null. This should not happen.");
+            }
             return;
         }
 
         Map<String, Object> updates = new HashMap<>();
-        // Обновляем статус для ОБОИХ пользователей
-        updates.put("/calls/" + currentUserId + "/" + callId + "/status", "answered");
-        updates.put("/calls/" + currentUserId + "/" + callId + "/answeredAt", System.currentTimeMillis());
-        updates.put("/calls/" + activeCallerId + "/" + callId + "/status", "answered");
+        updates.put("/calls/" + callId + "/status", "answered");
+        updates.put("/calls/" + callId + "/answeredAt", System.currentTimeMillis());
 
         firebaseDatabase.getReference().updateChildren(updates)
                 .addOnSuccessListener(aVoid -> {
-                    Log.d(TAG, "Звонок принят: " + callId);
-
+                    Log.d(TAG, "✅ Звонок принят: " + callId);
                     callState = CallState.ACTIVE;
                     if (stateCallback != null) {
                         mainHandler.post(() -> stateCallback.onCallStateChanged(CallState.ACTIVE));
                     }
                 })
                 .addOnFailureListener(e -> {
-                    Log.e(TAG, "Ошибка ответа на звонок: " + e.getMessage());
-                    if (stateCallback != null) {
-                        mainHandler.post(() -> stateCallback.onError("Ошибка ответа на звонок: " + e.getMessage()));
-                    }
+                    Log.e(TAG, "❌ Ошибка ответа на звонок: " + e.getMessage());
                 });
     }
 
@@ -579,26 +524,22 @@ public class CallManager {
      * Отклонение звонка
      */
     public void declineCall(String callId) {
-        Log.d(TAG, "Отклонение звонка: " + callId);
+        Log.d(TAG, "❌ Отклонение звонка: " + callId);
 
         Map<String, Object> updates = new HashMap<>();
-        updates.put("/calls/" + currentUserId + "/" + callId + "/status", "rejected");
-        updates.put("/calls/" + currentUserId + "/" + callId + "/rejectedAt", System.currentTimeMillis());
-
-        // Отправляем уведомление об отклонении
-        updates.put("/calls/" + activeCallerId + "/" + callId + "/status", "rejected");
+        updates.put("/calls/" + callId + "/status", "rejected");
+        updates.put("/calls/" + callId + "/rejectedAt", System.currentTimeMillis());
 
         firebaseDatabase.getReference().updateChildren(updates)
                 .addOnSuccessListener(aVoid -> {
-                    Log.d(TAG, "Звонок отклонён: " + callId);
+                    Log.d(TAG, "✅ Звонок отклонён: " + callId);
                     clearActiveCall();
-
                     if (stateCallback != null) {
                         mainHandler.post(() -> stateCallback.onCallStateChanged(CallState.IDLE));
                     }
                 })
                 .addOnFailureListener(e -> {
-                    Log.e(TAG, "Ошибка отклонения звонка: " + e.getMessage());
+                    Log.e(TAG, "❌ Ошибка отклонения звонка: " + e.getMessage());
                 });
     }
 
@@ -606,101 +547,68 @@ public class CallManager {
      * Завершение звонка
      */
     public void endCall(String callId) {
-        Log.d(TAG, "Завершение звонка: " + callId);
+        Log.d(TAG, "🔴 Завершение звонка: " + callId);
+
+        if (activeCallerId == null) {
+            Log.w(TAG, "activeCallerId is null, clearing local call only");
+            clearActiveCall();
+            return;
+        }
 
         Map<String, Object> updates = new HashMap<>();
-        updates.put("/calls/" + currentUserId + "/" + callId + "/status", "ended");
-        updates.put("/calls/" + currentUserId + "/" + callId + "/endedAt", System.currentTimeMillis());
-        updates.put("/calls/" + activeCallerId + "/" + callId + "/status", "ended");
+        updates.put("/calls/" + callId + "/status", "ended");
+        updates.put("/calls/" + callId + "/endedAt", System.currentTimeMillis());
 
         firebaseDatabase.getReference().updateChildren(updates)
                 .addOnSuccessListener(aVoid -> {
-                    Log.d(TAG, "Звонок завершён: " + callId);
+                    Log.d(TAG, "✅ Звонок завершён: " + callId);
                     clearActiveCall();
-
                     if (stateCallback != null) {
                         mainHandler.post(() -> stateCallback.onCallStateChanged(CallState.IDLE));
                     }
                 })
                 .addOnFailureListener(e -> {
-                    Log.e(TAG, "Ошибка завершения звонка: " + e.getMessage());
+                    Log.e(TAG, "❌ Ошибка завершения звонка: " + e.getMessage());
+                    clearActiveCall();
                 });
     }
 
     /**
      * Отправка ICE кандидата
      */
-    public void sendIceCandidate(String callId, String candidate, int lineIndex, String mid) {
-        if (activeCallerId == null) return;
 
-        Map<String, Object> iceData = new HashMap<>();
-        iceData.put("candidate", candidate);
-        iceData.put("sdpMLineIndex", lineIndex);
-        iceData.put("sdpMid", mid);
-        iceData.put("fromUser", currentUserId);
-
-        Map<String, Object> updates = new HashMap<>();
-        updates.put("/calls/" + activeCallerId + "/" + callId + "/iceCandidates/" + System.currentTimeMillis(), iceData);
-        updates.put("/calls/" + currentUserId + "/" + callId + "/iceCandidates/" + System.currentTimeMillis(), iceData);
-
-        firebaseDatabase.getReference().updateChildren(updates)
-                .addOnFailureListener(e -> Log.e(TAG, "Ошибка отправки ICE: " + e.getMessage()));
-    }
 
     /**
      * Отправка SDP Offer
      */
-    public void sendOffer(String callId, String sdp) {
-        if (activeCallerId == null) return;
 
-        Map<String, Object> updates = new HashMap<>();
-        updates.put("/calls/" + activeCallerId + "/" + callId + "/offer", sdp);
-
-        firebaseDatabase.getReference().updateChildren(updates)
-                .addOnFailureListener(e -> Log.e(TAG, "Ошибка отправки Offer: " + e.getMessage()));
-    }
 
     /**
-     * Отправка SDP Answer (ИСПРАВЛЕНО - отправляем звонящему)
+     * Отправка SDP Answer
      */
-    public void sendAnswer(String callId, String sdp) {
-        if (activeCallerId == null) {
-            Log.e(TAG, "activeCallerId is null, cannot send answer");
-            return;
-        }
 
-        Map<String, Object> updates = new HashMap<>();
-        // Answer нужно отправить звонящему, а не себе
-        updates.put("/calls/" + activeCallerId + "/" + callId + "/answer", sdp);
-
-        firebaseDatabase.getReference().updateChildren(updates)
-                .addOnSuccessListener(aVoid -> Log.d(TAG, "Answer отправлен успешно"))
-                .addOnFailureListener(e -> Log.e(TAG, "Ошибка отправки Answer: " + e.getMessage()));
-    }
 
     /**
      * Отправка push-уведомления о звонке через сервер
      */
-    private void sendCallNotification(String targetUserId, String callId,
-                                      String targetUserName, boolean isVideo, String callType) {
+    private void sendCallNotification(String targetUserId, String callId, String targetUserName, boolean isVideo) {
         executor.execute(() -> {
             try {
-                String serverUrl = "http://192.168.1.45:8000/send-call-to-user";
-                java.net.URL url = new java.net.URL(serverUrl);
+                JSONObject json = new JSONObject();
+                json.put("user_id", targetUserId);
+                json.put("caller_id", currentUserId);
+                json.put("caller_name", currentUserName != null ? currentUserName : "Пользователь");
+                json.put("call_type", "incoming");
+                json.put("call_id", callId);
+                json.put("room_name", activeRoomName);
+                json.put("is_video", isVideo);
+
+                java.net.URL url = new java.net.URL(PUSH_SERVER_URL + "/send-call-to-user");
                 java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
                 conn.setDoOutput(true);
                 conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
-
-                JSONObject json = new JSONObject();
-                json.put("user_id", targetUserId);
-                json.put("caller_id", currentUserId);
-                json.put("caller_name", currentUserName);
-                json.put("call_type", callType);
-                json.put("call_id", callId);
-                json.put("is_video", isVideo);
 
                 java.io.OutputStream os = conn.getOutputStream();
                 os.write(json.toString().getBytes("UTF-8"));
@@ -721,9 +629,6 @@ public class CallManager {
      * Показ уведомления о входящем звонке
      */
     private void showIncomingCallNotification(CallInfo callInfo) {
-        CallNotificationManager notificationManager = new CallNotificationManager(context);
-        notificationManager.createNotificationChannels();
-
         Intent intent = new Intent(context, IncomingCallActivity.class);
         intent.putExtra("call_id", callInfo.callId);
         intent.putExtra("room_name", callInfo.roomName);
@@ -732,76 +637,35 @@ public class CallManager {
         intent.putExtra("is_video", callInfo.isVideo);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
 
-        CallNotificationManager.createIncomingCallNotification(
-                context, callInfo, intent);
+        CallNotificationManager.createIncomingCallNotification(context, callInfo, intent);
     }
 
     /**
      * Очистка данных активного звонка
      */
-    private void clearActiveCall() {
+    public void clearActiveCall() {
         activeCallId = null;
         activeRoomName = null;
         activeCallerId = null;
         activeCallerName = null;
         activeIsVideo = false;
         activeIsOutgoing = false;
+        callState = CallState.IDLE;
+        Log.d(TAG, "Активный звонок очищен");
     }
 
     /**
-     * Удаление прослушивателей (вызывать при выходе из приложения)
+     * Установка активного звонка (для IncomingCallActivity)
      */
-    public void cleanup() {
-        // Прослушиватели автоматически отключаются при уничтожении Firebase Database ссылкок
-        Log.d(TAG, "CallManager очищен");
+    public void setActiveCall(String callId, String callerId, String callerName, boolean isVideo, boolean isOutgoing) {
+        this.activeCallId = callId;
+        this.activeCallerId = callerId;
+        this.activeCallerName = callerName;
+        this.activeIsVideo = isVideo;
+        this.activeIsOutgoing = isOutgoing;
+        this.callState = isOutgoing ? CallState.OUTGOING : CallState.INCOMING;
+        Log.d(TAG, "Активный звонок установлен: callId=" + callId + ", callerId=" + callerId);
     }
 
-    // Getters и Setters
-    public void setStateCallback(CallStateCallback callback) {
-        this.stateCallback = callback;
-    }
 
-    public void setDataCallback(CallDataCallback callback) {
-        this.dataCallback = callback;
-    }
-
-    public String getCurrentUserId() {
-        return currentUserId;
-    }
-
-    public String getCurrentUserName() {
-        return currentUserName;
-    }
-
-    public String getActiveCallId() {
-        return activeCallId;
-    }
-
-    public String getActiveRoomName() {
-        return activeRoomName;
-    }
-
-    public String getActiveCallerId() {
-        return activeCallerId;
-    }
-
-    public String getActiveCallerName() {
-        return activeCallerName;
-    }
-
-    public boolean isActiveIsVideo() {
-        return activeIsVideo;
-    }
-
-    public boolean isActiveIsOutgoing() {
-        return activeIsOutgoing;
-    }
-
-    public CallState getCallState() {
-        return callState;
-    }
-
-    public boolean isCallActive() {
-        return callState == CallState.ACTIVE || callState == CallState.OUTGOING || callState == CallState.INCOMING;
-    }
 }
