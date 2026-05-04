@@ -37,6 +37,8 @@ public class CallActivity extends AppCompatActivity {
     private static final String WS_SERVER_URL = "ws://192.168.31.163:3001";
 
     // Данные звонка
+
+    private boolean isFrontCamera = true;
     private String callId;
     private String callerName;
     private String callerId;
@@ -97,7 +99,6 @@ public class CallActivity extends AppCompatActivity {
                         WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
                         WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         );
-
         initViews();
         getIntentData();
         initUserInfo();
@@ -391,6 +392,7 @@ public class CallActivity extends AppCompatActivity {
 
                     // Настройка аудио
                     setupAudioForCall(); // Вынесите в отдельный метод
+                    setupVideoForCall();
                 });
             }
 
@@ -477,42 +479,7 @@ public class CallActivity extends AppCompatActivity {
         }
     }
 
-    private void checkUserOnlineAndCall(String targetUserId) {
-        // Показываем статус проверки
-        callStatusText.setText("Проверка пользователя...");
 
-        // Получаем список онлайн пользователей через WebSocket
-        signalingClient.getOnlineUsers();
-
-        // Устанавливаем таймаут
-        Handler handler = new Handler(Looper.getMainLooper());
-        Runnable timeoutRunnable = () -> {
-            Toast.makeText(this, "Пользователь не в сети", Toast.LENGTH_SHORT).show();
-            endCall();
-        };
-        handler.postDelayed(timeoutRunnable, 10000);
-
-        // Слушаем ответ от сервера
-        signalingClient.setTempUserListListener(users -> {
-            for (String userId : users) {
-                if (userId.equals(targetUserId)) {
-                    handler.removeCallbacks(timeoutRunnable);
-                    // Пользователь онлайн, начинаем звонок
-                    runOnUiThread(() -> {
-                        Log.d(TAG, "User is online, starting call to: " + targetUserId);
-                        webRtcClient.startCall(targetUserId, isVideo);
-                        callStatusText.setText("Вызов...");
-
-                        // Отправляем call-request через WebSocket
-                        signalingClient.sendCallRequest(targetUserId, isVideo);
-                    });
-                    return;
-                }
-            }
-            // Если не нашли, проверяем еще раз через секунду
-            handler.postDelayed(() -> signalingClient.getOnlineUsers(), 1000);
-        });
-    }
 
     private void setupClickListeners() {
         btnSpeaker.setOnClickListener(v -> toggleSpeaker());
@@ -674,26 +641,57 @@ public class CallActivity extends AppCompatActivity {
         timerHandler.post(timerRunnable);
     }
 
-    private void clearNotification() {
-        NotificationManager notificationManager =
-                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (callId != null && notificationManager != null) {
-            notificationManager.cancel(callId.hashCode());
+
+
+
+    // Добавьте эти переменные в начало класса (если нет)
+
+
+
+    // Добавьте метод для настройки видео
+    private void setupVideoForCall() {
+        Log.d(TAG, "🎥 Configuring video for call...");
+
+        if (isVideo) {
+            // Показываем контейнеры для видео
+            if (videoPreviewContainer != null) {
+                videoPreviewContainer.setVisibility(View.VISIBLE);
+            }
+            if (localVideoContainer != null) {
+                localVideoContainer.setVisibility(View.VISIBLE);
+            }
+
+            // Настраиваем локальное видео
+            if (localVideoView != null && webRtcClient != null) {
+                localVideoView.init(webRtcClient.getEglBaseContext(), null);
+            }
+
+            Log.d(TAG, "Video UI configured");
+        } else {
+            // Скрываем видео элементы для аудиозвонка
+            if (videoPreviewContainer != null) {
+                videoPreviewContainer.setVisibility(View.GONE);
+            }
+            if (localVideoContainer != null) {
+                localVideoContainer.setVisibility(View.GONE);
+            }
         }
     }
 
-    private void onCallConnected() {
-        isConnected = true;
-        callStatusText.setText("В разговоре");
-        callStatusText.setTextColor(getColor(android.R.color.holo_green_dark));
-        startTimer();
 
-        // Настраиваем аудио
-        if (audioManager != null) {
-            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            audioManager.setSpeakerphoneOn(isSpeakerOn);
-        }
-    }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     private void endCall() {
         if (!isCallActive) return;

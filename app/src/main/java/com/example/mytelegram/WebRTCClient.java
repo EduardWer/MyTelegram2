@@ -7,6 +7,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.webrtc.AudioSource;
 import org.webrtc.AudioTrack;
+import org.webrtc.Camera1Enumerator;
 import org.webrtc.Camera2Enumerator;
 import org.webrtc.CameraEnumerator;
 import org.webrtc.CameraVideoCapturer;
@@ -50,11 +51,14 @@ public class WebRTCClient {
     private WebRTCCallback callback;
     private List<IceCandidate> pendingIceCandidates = new ArrayList<>();
     private VideoCapturer videoCapturer;
-    private SurfaceTextureHelper surfaceTextureHelper;
     private List<RtpSender> localSenders = new ArrayList<>();
     private boolean isCallActive = false;
 
-    // ICE серверы (добавим TURN для надежности)
+    // Состояния видео
+    private boolean isVideoEnabled = true;
+    private boolean isFrontCamera = true;
+
+    // ICE серверы
     private static final List<PeerConnection.IceServer> ICE_SERVERS = new ArrayList<>();
     static {
         ICE_SERVERS.add(PeerConnection.IceServer.builder("turn:global.turn.metered.ca:443")
@@ -122,12 +126,12 @@ public class WebRTCClient {
     public void createLocalTracks(boolean isVideo) {
         Log.d(TAG, "Creating local tracks, isVideo=" + isVideo);
 
-        // Создаем аудио источник и трек
+        // Аудио трек (всегда)
         audioSource = peerConnectionFactory.createAudioSource(new MediaConstraints());
         localAudioTrack = peerConnectionFactory.createAudioTrack("audio_track", audioSource);
         localAudioTrack.setEnabled(true);
 
-        // Создаем видео трек если нужно
+        // Видео трек (только если нужно)
         if (isVideo) {
             createVideoTrack();
         }
@@ -138,43 +142,67 @@ public class WebRTCClient {
     }
 
     private void createVideoTrack() {
-        videoCapturer = createCameraCapturer();
-        if (videoCapturer == null) {
-            Log.e(TAG, "Failed to create camera capturer");
-            return;
+        Log.d(TAG, "Creating video track...");
+        try {
+            videoSource = peerConnectionFactory.createVideoSource(false);
+            videoCapturer = createCameraCapturer();
+
+            if (videoCapturer != null) {
+                SurfaceTextureHelper surfaceTextureHelper = SurfaceTextureHelper.create(
+                        "CaptureThread", rootEglBase.getEglBaseContext());
+                videoCapturer.initialize(surfaceTextureHelper, context, videoSource.getCapturerObserver());
+                videoCapturer.startCapture(1280, 720, 30);
+
+                localVideoTrack = peerConnectionFactory.createVideoTrack("video_track", videoSource);
+                localVideoTrack.setEnabled(true);
+                Log.d(TAG, "✅ Video track created successfully");
+            } else {
+                Log.e(TAG, "Failed to create video capturer");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error creating video track: " + e.getMessage());
         }
-
-        surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", rootEglBase.getEglBaseContext());
-        videoSource = peerConnectionFactory.createVideoSource(videoCapturer.isScreencast());
-        videoCapturer.initialize(surfaceTextureHelper, context, videoSource.getCapturerObserver());
-        videoCapturer.startCapture(1280, 720, 30);
-
-        localVideoTrack = peerConnectionFactory.createVideoTrack("video_track", videoSource);
-        localVideoTrack.setEnabled(true);
     }
 
     private VideoCapturer createCameraCapturer() {
-        CameraEnumerator enumerator = new Camera2Enumerator(context);
+        Log.d(TAG, "Creating camera capturer, front=" + isFrontCamera);
+
+        CameraEnumerator enumerator;
+        if (Camera2Enumerator.isSupported(context)) {
+            enumerator = new Camera2Enumerator(context);
+        } else {
+            enumerator = new Camera1Enumerator();
+        }
+
         String[] deviceNames = enumerator.getDeviceNames();
 
-        // Сначала ищем фронтальную камеру
+        // Ищем камеру с нужным направлением
         for (String deviceName : deviceNames) {
-            if (enumerator.isFrontFacing(deviceName)) {
-                VideoCapturer videoCapturer = enumerator.createCapturer(deviceName, null);
-                if (videoCapturer != null) {
-                    return videoCapturer;
+            if (isFrontCamera && enumerator.isFrontFacing(deviceName)) {
+                VideoCapturer capturer = enumerator.createCapturer(deviceName, null);
+                if (capturer != null) {
+                    Log.d(TAG, "Using front camera: " + deviceName);
+                    return capturer;
+                }
+            } else if (!isFrontCamera && enumerator.isBackFacing(deviceName)) {
+                VideoCapturer capturer = enumerator.createCapturer(deviceName, null);
+                if (capturer != null) {
+                    Log.d(TAG, "Using back camera: " + deviceName);
+                    return capturer;
                 }
             }
         }
 
-        // Если фронтальной нет, берем любую
+        // Если не нашли нужную, берем любую доступную
         for (String deviceName : deviceNames) {
-            VideoCapturer videoCapturer = enumerator.createCapturer(deviceName, null);
-            if (videoCapturer != null) {
-                return videoCapturer;
+            VideoCapturer capturer = enumerator.createCapturer(deviceName, null);
+            if (capturer != null) {
+                Log.d(TAG, "Using any camera: " + deviceName);
+                return capturer;
             }
         }
 
+        Log.e(TAG, "No camera found");
         return null;
     }
 
@@ -213,8 +241,8 @@ public class WebRTCClient {
             }
 
             @Override
-            public void onIceConnectionReceivingChange(boolean b) {
-                Log.d(TAG, "onIceConnectionReceivingChange: " + b);
+            public void onIceConnectionReceivingChange(boolean receiving) {
+                Log.d(TAG, "onIceConnectionReceivingChange: " + receiving);
             }
 
             @Override
@@ -258,15 +286,18 @@ public class WebRTCClient {
 
             @Override
             public void onAddTrack(RtpReceiver rtpReceiver, MediaStream[] mediaStreams) {
-                Log.d(TAG, "onAddTrack");
+                Log.d(TAG, "onAddTrack: " + rtpReceiver.id());
+
                 if (mediaStreams.length > 0) {
                     if (rtpReceiver.track() instanceof VideoTrack) {
                         VideoTrack remoteVideoTrack = (VideoTrack) rtpReceiver.track();
+                        Log.d(TAG, "✅ Remote video track received");
                         if (callback != null) {
                             callback.onRemoteVideoTrack(remoteVideoTrack);
                         }
                     } else if (rtpReceiver.track() instanceof AudioTrack) {
                         AudioTrack remoteAudioTrack = (AudioTrack) rtpReceiver.track();
+                        Log.d(TAG, "✅ Remote audio track received");
                         if (callback != null) {
                             callback.onRemoteAudioTrack(remoteAudioTrack);
                         }
@@ -286,7 +317,7 @@ public class WebRTCClient {
         createLocalTracks(isVideo);
         peerConnection = createPeerConnection();
 
-        // Добавляем треки через addTrack
+        // Добавляем аудио трек
         if (localAudioTrack != null) {
             RtpSender audioSender = peerConnection.addTrack(localAudioTrack);
             if (audioSender != null) {
@@ -294,6 +325,7 @@ public class WebRTCClient {
             }
         }
 
+        // Добавляем видео трек (если нужно)
         if (isVideo && localVideoTrack != null) {
             RtpSender videoSender = peerConnection.addTrack(localVideoTrack);
             if (videoSender != null) {
@@ -308,6 +340,216 @@ public class WebRTCClient {
         }
 
         peerConnection.createOffer(createSdpObserver(true), constraints);
+    }
+
+    public void acceptCall(String callerId, boolean isVideo) {
+        Log.d(TAG, "Accepting call from: " + callerId + ", isVideo=" + isVideo);
+        this.targetUserId = callerId;
+        this.isVideoCall = isVideo;
+
+        // Создаем треки только если их еще нет
+        if (localAudioTrack == null) {
+            createLocalTracks(isVideo);
+        } else if (isVideo && localVideoTrack == null) {
+            // Аудио уже есть, нужно добавить видео
+            createVideoTrack();
+        }
+
+        if (peerConnection == null) {
+            peerConnection = createPeerConnection();
+
+            if (localAudioTrack != null) {
+                peerConnection.addTrack(localAudioTrack);
+            }
+            if (isVideo && localVideoTrack != null) {
+                peerConnection.addTrack(localVideoTrack);
+            }
+        }
+    }
+
+    public void onRemoteOffer(String fromUserId, String sdp) {
+        Log.d(TAG, "Processing remote offer from " + fromUserId);
+        this.targetUserId = fromUserId;
+
+        // Определяем, есть ли видео в SDP
+        boolean hasVideo = sdp.contains("m=video");
+        if (hasVideo && !this.isVideoCall) {
+            this.isVideoCall = true;
+            Log.d(TAG, "Video detected in SDP, enabling video call");
+        }
+
+        if (peerConnection == null) {
+            createLocalTracks(isVideoCall);
+            peerConnection = createPeerConnection();
+
+            if (localAudioTrack != null) {
+                peerConnection.addTrack(localAudioTrack);
+            }
+            if (isVideoCall && localVideoTrack != null) {
+                peerConnection.addTrack(localVideoTrack);
+            }
+        }
+
+        SessionDescription sessionDescription = new SessionDescription(
+                SessionDescription.Type.OFFER, sdp);
+
+        peerConnection.setRemoteDescription(new SdpObserver() {
+            @Override
+            public void onSetSuccess() {
+                Log.d(TAG, "✅ Remote description set, creating answer");
+
+                MediaConstraints constraints = new MediaConstraints();
+                constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
+                if (isVideoCall) {
+                    constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"));
+                }
+
+                peerConnection.createAnswer(createSdpObserver(false), constraints);
+            }
+
+            @Override
+            public void onSetFailure(String s) {
+                Log.e(TAG, "Failed to set remote description: " + s);
+                if (callback != null) {
+                    callback.onError("Failed to set remote description: " + s);
+                }
+            }
+            @Override public void onCreateSuccess(SessionDescription sd) {}
+            @Override public void onCreateFailure(String s) {}
+        }, sessionDescription);
+    }
+
+    public void onRemoteAnswer(String fromUserId, String sdp) {
+        Log.d(TAG, "Processing remote answer from " + fromUserId);
+        handleAnswer(sdp);
+    }
+
+    public void addRemoteIceCandidate(String fromUserId, String candidate, int sdpMLineIndex, String sdpMid) {
+        Log.d(TAG, "Adding remote ICE candidate from " + fromUserId);
+        handleIceCandidate(candidate, sdpMLineIndex, sdpMid);
+    }
+
+    public void onSignalingMessage(String message) {
+        try {
+            JSONObject json = new JSONObject(message);
+            String type = json.getString("type");
+
+            switch (type) {
+                case "offer":
+                    String sdp = json.getString("sdp");
+                    handleOffer(sdp);
+                    break;
+                case "answer":
+                    String answerSdp = json.getString("sdp");
+                    handleAnswer(answerSdp);
+                    break;
+                case "ice-candidate":
+                    String candidate = json.getString("candidate");
+                    int sdpMLineIndex = json.getInt("sdpMLineIndex");
+                    String sdpMid = json.getString("sdpMid");
+                    handleIceCandidate(candidate, sdpMLineIndex, sdpMid);
+                    break;
+            }
+        } catch (JSONException e) {
+            Log.e(TAG, "Error parsing signaling message: " + e.getMessage());
+        }
+    }
+
+    private void handleOffer(String sdp) {
+        Log.d(TAG, "Handling offer");
+
+        // Определяем, есть ли видео в SDP
+        boolean hasVideo = sdp.contains("m=video");
+        if (hasVideo && !this.isVideoCall) {
+            this.isVideoCall = true;
+            Log.d(TAG, "Video detected in SDP, enabling video call");
+        }
+
+        if (peerConnection == null) {
+            createLocalTracks(isVideoCall);
+            peerConnection = createPeerConnection();
+
+            if (localAudioTrack != null) {
+                peerConnection.addTrack(localAudioTrack);
+            }
+            if (isVideoCall && localVideoTrack != null) {
+                peerConnection.addTrack(localVideoTrack);
+            }
+        }
+
+        SessionDescription sessionDescription = new SessionDescription(
+                SessionDescription.Type.OFFER, sdp);
+
+        peerConnection.setRemoteDescription(new SdpObserver() {
+            @Override
+            public void onSetSuccess() {
+                Log.d(TAG, "Remote description set");
+
+                // Добавляем накопленные ICE кандидаты
+                for (IceCandidate candidate : pendingIceCandidates) {
+                    peerConnection.addIceCandidate(candidate);
+                }
+                pendingIceCandidates.clear();
+
+                MediaConstraints constraints = new MediaConstraints();
+                constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
+                if (isVideoCall) {
+                    constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"));
+                }
+
+                peerConnection.createAnswer(createSdpObserver(false), constraints);
+            }
+
+            @Override
+            public void onSetFailure(String s) {
+                Log.e(TAG, "onSetFailure: " + s);
+                if (callback != null) {
+                    callback.onError("Failed to set remote description: " + s);
+                }
+            }
+            @Override public void onCreateSuccess(SessionDescription sd) {}
+            @Override public void onCreateFailure(String s) {}
+        }, sessionDescription);
+    }
+
+    private void handleAnswer(String sdp) {
+        Log.d(TAG, "Handling answer");
+        SessionDescription sessionDescription = new SessionDescription(
+                SessionDescription.Type.ANSWER, sdp);
+
+        peerConnection.setRemoteDescription(new SdpObserver() {
+            @Override
+            public void onSetSuccess() {
+                Log.d(TAG, "Remote answer set");
+                // Добавляем накопленные ICE кандидаты
+                for (IceCandidate candidate : pendingIceCandidates) {
+                    peerConnection.addIceCandidate(candidate);
+                }
+                pendingIceCandidates.clear();
+            }
+
+            @Override
+            public void onSetFailure(String s) {
+                Log.e(TAG, "onSetFailure: " + s);
+                if (callback != null) {
+                    callback.onError("Failed to set remote answer: " + s);
+                }
+            }
+            @Override public void onCreateSuccess(SessionDescription sd) {}
+            @Override public void onCreateFailure(String s) {}
+        }, sessionDescription);
+    }
+
+    private void handleIceCandidate(String candidate, int sdpMLineIndex, String sdpMid) {
+        IceCandidate iceCandidate = new IceCandidate(sdpMid, sdpMLineIndex, candidate);
+
+        if (peerConnection != null && peerConnection.getRemoteDescription() != null) {
+            peerConnection.addIceCandidate(iceCandidate);
+            Log.d(TAG, "ICE candidate added immediately");
+        } else {
+            pendingIceCandidates.add(iceCandidate);
+            Log.d(TAG, "ICE candidate queued (remote description not set yet)");
+        }
     }
 
     private SdpObserver createSdpObserver(boolean isOffer) {
@@ -357,197 +599,17 @@ public class WebRTCClient {
             @Override
             public void onSetFailure(String s) {
                 Log.e(TAG, "onSetFailure: " + s);
+                if (callback != null) {
+                    callback.onError("Failed to set local description: " + s);
+                }
             }
         };
     }
 
-    public void onSignalingMessage(String message) {
-        try {
-            JSONObject json = new JSONObject(message);
-            String type = json.getString("type");
-
-            switch (type) {
-                case "offer":
-                    String sdp = json.getString("sdp");
-                    handleOffer(sdp);
-                    break;
-                case "answer":
-                    String answerSdp = json.getString("sdp");
-                    handleAnswer(answerSdp);
-                    break;
-                case "ice-candidate":
-                    String candidate = json.getString("candidate");
-                    int sdpMLineIndex = json.getInt("sdpMLineIndex");
-                    String sdpMid = json.getString("sdpMid");
-                    handleIceCandidate(candidate, sdpMLineIndex, sdpMid);
-                    break;
-            }
-        } catch (JSONException e) {
-            Log.e(TAG, "Error parsing signaling message: " + e.getMessage());
-        }
-    }
-
-    public void onRemoteOffer(String fromUserId, String sdp) {
-        Log.d(TAG, "Processing remote offer from " + fromUserId);
-        this.targetUserId = fromUserId;
-        this.isVideoCall = false; // Определяем по sdp, но пока false
-
-        if (peerConnection == null) {
-            createLocalTracks(isVideoCall);
-            peerConnection = createPeerConnection();
-
-            if (localAudioTrack != null) {
-                peerConnection.addTrack(localAudioTrack);
-            }
-            if (isVideoCall && localVideoTrack != null) {
-                peerConnection.addTrack(localVideoTrack);
-            }
-        }
-
-        SessionDescription sessionDescription = new SessionDescription(
-                SessionDescription.Type.OFFER, sdp);
-
-        peerConnection.setRemoteDescription(new SdpObserver() {
-            @Override
-            public void onSetSuccess() {
-                Log.d(TAG, "✅ Remote description set, creating answer");
-
-                MediaConstraints constraints = new MediaConstraints();
-                constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
-                if (isVideoCall) {
-                    constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"));
-                }
-
-                peerConnection.createAnswer(createSdpObserver(false), constraints);
-            }
-
-            @Override
-            public void onSetFailure(String s) {
-                Log.e(TAG, "Failed to set remote description: " + s);
-            }
-            @Override public void onCreateSuccess(SessionDescription sd) {}
-            @Override public void onCreateFailure(String s) {}
-        }, sessionDescription);
-    }
-
-    public void onRemoteAnswer(String fromUserId, String sdp) {
-        Log.d(TAG, "Processing remote answer from " + fromUserId);
-        handleAnswer(sdp);
-    }
-
-    public void addRemoteIceCandidate(String fromUserId, String candidate, int sdpMLineIndex, String sdpMid) {
-        Log.d(TAG, "Adding remote ICE candidate from " + fromUserId);
-        handleIceCandidate(candidate, sdpMLineIndex, sdpMid);
-    }
-
-    private void handleOffer(String sdp) {
-        Log.d(TAG, "Handling offer");
-        if (peerConnection == null) {
-            createLocalTracks(isVideoCall);
-            peerConnection = createPeerConnection();
-
-            if (localAudioTrack != null) {
-                peerConnection.addTrack(localAudioTrack);
-            }
-            if (isVideoCall && localVideoTrack != null) {
-                peerConnection.addTrack(localVideoTrack);
-            }
-        }
-
-        SessionDescription sessionDescription = new SessionDescription(
-                SessionDescription.Type.OFFER, sdp);
-
-        peerConnection.setRemoteDescription(new SdpObserver() {
-            @Override
-            public void onSetSuccess() {
-                Log.d(TAG, "Remote description set");
-
-                for (IceCandidate candidate : pendingIceCandidates) {
-                    peerConnection.addIceCandidate(candidate);
-                }
-                pendingIceCandidates.clear();
-
-                MediaConstraints constraints = new MediaConstraints();
-                constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
-                if (isVideoCall) {
-                    constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"));
-                }
-
-                peerConnection.createAnswer(createSdpObserver(false), constraints);
-            }
-
-            @Override
-            public void onSetFailure(String s) {
-                Log.e(TAG, "onSetFailure: " + s);
-            }
-            @Override public void onCreateSuccess(SessionDescription sd) {}
-            @Override public void onCreateFailure(String s) {}
-        }, sessionDescription);
-    }
-
-    private void handleAnswer(String sdp) {
-        Log.d(TAG, "Handling answer");
-        SessionDescription sessionDescription = new SessionDescription(
-                SessionDescription.Type.ANSWER, sdp);
-
-        peerConnection.setRemoteDescription(new SdpObserver() {
-            @Override
-            public void onSetSuccess() {
-                Log.d(TAG, "Remote answer set");
-                for (IceCandidate candidate : pendingIceCandidates) {
-                    peerConnection.addIceCandidate(candidate);
-                }
-                pendingIceCandidates.clear();
-            }
-
-            @Override
-            public void onSetFailure(String s) {
-                Log.e(TAG, "onSetFailure: " + s);
-            }
-            @Override public void onCreateSuccess(SessionDescription sd) {}
-            @Override public void onCreateFailure(String s) {}
-        }, sessionDescription);
-    }
-
-    private void handleIceCandidate(String candidate, int sdpMLineIndex, String sdpMid) {
-        IceCandidate iceCandidate = new IceCandidate(sdpMid, sdpMLineIndex, candidate);
-
-        if (peerConnection != null && peerConnection.getRemoteDescription() != null) {
-            peerConnection.addIceCandidate(iceCandidate);
-        } else {
-            pendingIceCandidates.add(iceCandidate);
-        }
-    }
-
-    public void acceptCall(String callerId, boolean isVideo) {
-        Log.d(TAG, "Accepting call from: " + callerId);
-        this.targetUserId = callerId;
-        this.isVideoCall = isVideo;
-
-        if (localAudioTrack == null) {
-            createLocalTracks(isVideo);
-        }
-
-        if (peerConnection == null) {
-            peerConnection = createPeerConnection();
-
-            if (localAudioTrack != null) {
-                peerConnection.addTrack(localAudioTrack);
-            }
-            if (isVideo && localVideoTrack != null) {
-                peerConnection.addTrack(localVideoTrack);
-            }
-        }
-    }
-
-    public void toggleAudio(boolean enable) {
-        if (localAudioTrack != null) {
-            localAudioTrack.setEnabled(enable);
-            Log.d(TAG, "Audio " + (enable ? "enabled" : "disabled"));
-        }
-    }
+    // ==================== Управление видео ====================
 
     public void toggleVideo(boolean enable) {
+        isVideoEnabled = enable;
         if (localVideoTrack != null) {
             localVideoTrack.setEnabled(enable);
             Log.d(TAG, "Video " + (enable ? "enabled" : "disabled"));
@@ -556,10 +618,29 @@ public class WebRTCClient {
 
     public void switchCamera() {
         if (videoCapturer instanceof CameraVideoCapturer) {
+            isFrontCamera = !isFrontCamera;
             CameraVideoCapturer cameraCapturer = (CameraVideoCapturer) videoCapturer;
             cameraCapturer.switchCamera(null);
+            Log.d(TAG, "Camera switched, isFront=" + isFrontCamera);
+        } else {
+            Log.w(TAG, "Cannot switch camera - not a CameraVideoCapturer");
         }
     }
+
+    public boolean isVideoEnabled() {
+        return isVideoEnabled;
+    }
+
+    // ==================== Управление аудио ====================
+
+    public void toggleAudio(boolean enable) {
+        if (localAudioTrack != null) {
+            localAudioTrack.setEnabled(enable);
+            Log.d(TAG, "Audio " + (enable ? "enabled" : "disabled"));
+        }
+    }
+
+    // ==================== Завершение звонка ====================
 
     public void hangUp() {
         Log.d(TAG, "Hanging up call");
@@ -574,15 +655,10 @@ public class WebRTCClient {
             try {
                 videoCapturer.stopCapture();
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                Log.e(TAG, "Error stopping capture: " + e.getMessage());
             }
             videoCapturer.dispose();
             videoCapturer = null;
-        }
-
-        if (surfaceTextureHelper != null) {
-            surfaceTextureHelper.dispose();
-            surfaceTextureHelper = null;
         }
 
         if (videoSource != null) {
@@ -590,9 +666,9 @@ public class WebRTCClient {
             videoSource = null;
         }
 
-        if (audioSource != null) {
-            audioSource.dispose();
-            audioSource = null;
+        if (localVideoTrack != null) {
+            localVideoTrack.dispose();
+            localVideoTrack = null;
         }
 
         localSenders.clear();
@@ -601,15 +677,27 @@ public class WebRTCClient {
 
     public void dispose() {
         hangUp();
+
+        if (localAudioTrack != null) {
+            localAudioTrack.dispose();
+            localAudioTrack = null;
+        }
+
+        if (audioSource != null) {
+            audioSource.dispose();
+            audioSource = null;
+        }
+
         if (peerConnectionFactory != null) {
             peerConnectionFactory.dispose();
             peerConnectionFactory = null;
         }
+
         if (rootEglBase != null) {
             rootEglBase.release();
             rootEglBase = null;
         }
+
+        Log.d(TAG, "WebRTCClient disposed");
     }
-
-
 }

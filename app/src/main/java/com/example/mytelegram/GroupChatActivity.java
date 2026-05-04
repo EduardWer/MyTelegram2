@@ -154,6 +154,7 @@ public class GroupChatActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_group_chat);
 
+        Log.d(TAG, "Cообщения скинулись");
         getIntentData();
         initFirebase();
         initViews();
@@ -884,7 +885,7 @@ public class GroupChatActivity extends AppCompatActivity {
 
     private void markAllMessagesAsRead() {
         // Проверяем, нужно ли отмечать сообщения как прочитанные
-        DatabaseReference chatReadRef = userChatsRef.child(currentUserId).child(chatId).child("readMarked");
+        DatabaseReference chatReadRef = userChatsRef.child(currentUserId).child(chatId).child("isRead");
         chatReadRef.addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
@@ -902,43 +903,58 @@ public class GroupChatActivity extends AppCompatActivity {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot snapshot) {
                         Map<String, Object> updates = new HashMap<>();
-                        int addedCount = 0;
+                        List<String> updatedMessageIds = new ArrayList<>();
 
                         for (DataSnapshot msgSnap : snapshot.getChildren()) {
                             String senderId = msgSnap.child("senderId").getValue(String.class);
                             String messageId = msgSnap.getKey();
 
+                            // ✅ ПРОПУСКАЕМ свои сообщения
                             if (senderId == null || senderId.equals(currentUserId) || messageId == null) {
                                 continue;
                             }
 
-                            // Проверяем, есть ли уже пользователь в списке readBy
-                            if (!msgSnap.child("readBy").hasChild(currentUserId)) {
+                            // ✅ ПРОВЕРЯЕМ, есть ли уже пользователь в списке readBy
+                            DataSnapshot readBySnap = msgSnap.child("readBy");
+                            if (!readBySnap.hasChild(currentUserId)) {
+                                // ✅ ПРАВИЛЬНЫЙ ПУТЬ: messageId/readBy/currentUserId
                                 updates.put(messageId + "/readBy/" + currentUserId, true);
                                 updates.put(messageId + "/isRead", true);
-                                addedCount++;
+                                updatedMessageIds.add(messageId);
+
+                                Log.d(TAG, "Marking message " + messageId + " as read for user " + currentUserId);
                             }
                         }
 
                         if (!updates.isEmpty()) {
-                            int finalAddedCount = addedCount;
+                            Log.d(TAG, "Updating " + updatedMessageIds.size() + " messages with readBy");
+
+                            // ✅ ОБНОВЛЯЕМ через chatRef (не через userChatsRef!)
                             chatRef.updateChildren(updates)
                                     .addOnSuccessListener(aVoid -> {
-                                        Log.d(TAG, "✅ Successfully marked " + finalAddedCount + " messages as read");
+                                        Log.d(TAG, "✅ Successfully marked " + updatedMessageIds.size() + " messages as read");
                                         // Устанавливаем флаг, что сообщения отмечены
                                         userChatsRef.child(currentUserId).child(chatId).child("readMarked").setValue(true);
+
+                                        // ✅ ОБНОВЛЯЕМ UI
+                                        for (String messageId : updatedMessageIds) {
+                                            updateMessageReadStatusLocally(messageId);
+                                        }
                                     })
-                                    .addOnFailureListener(e -> Log.e(TAG, "Failed to update: " + e.getMessage()));
+                                    .addOnFailureListener(e -> {
+                                        Log.e(TAG, "Failed to update readBy: " + e.getMessage());
+                                        // Пробуем обновить каждое сообщение по отдельности
+                                        updateMessagesIndividually(updatedMessageIds);
+                                    });
                         } else {
                             Log.d(TAG, "No new messages to mark as read");
-                            // Даже если нет сообщений, ставим флаг
                             userChatsRef.child(currentUserId).child(chatId).child("readMarked").setValue(true);
                         }
                     }
 
                     @Override
                     public void onCancelled(@NonNull DatabaseError error) {
-                        Log.e(TAG, "Error: " + error.getMessage());
+                        Log.e(TAG, "Error loading messages: " + error.getMessage());
                     }
                 });
             }
@@ -950,8 +966,46 @@ public class GroupChatActivity extends AppCompatActivity {
         });
     }
 
-    // Сохраняем флаг, что сообщения уже были отмечены как прочитанные
+    // ✅ ДОПОЛНИТЕЛЬНЫЙ МЕТОД для обновления сообщений по одному (fallback)
+    private void updateMessagesIndividually(List<String> messageIds) {
+        for (String messageId : messageIds) {
+            Map<String, Object> updates = new HashMap<>();
+            updates.put("readBy/" + currentUserId, true);
+            updates.put("isRead", true);
 
+            chatRef.child(messageId).updateChildren(updates)
+                    .addOnSuccessListener(aVoid -> {
+                        Log.d(TAG, "✅ Marked message " + messageId + " as read individually");
+                        updateMessageReadStatusLocally(messageId);
+                    })
+                    .addOnFailureListener(e -> {
+                        Log.e(TAG, "Failed to mark message " + messageId + ": " + e.getMessage());
+                    });
+        }
+    }
+
+    // ✅ МЕТОД ДЛЯ ОБНОВЛЕНИЯ UI
+    private void updateMessageReadStatusLocally(String messageId) {
+        Integer position = messagePositions.get(messageId);
+        if (position != null && position < messagesList.size()) {
+            Message msg = messagesList.get(position);
+            if (msg.getReadBy() == null) {
+                msg.setReadBy(new HashMap<>());
+            }
+            msg.getReadBy().put(currentUserId, true);
+
+            // Обновляем только этот элемент
+            if (messagesAdapter != null) {
+                messagesAdapter.notifyItemChanged(position);
+            }
+        }
+    }
+
+    // Сохраняем флаг, что сообщения уже были отмечены как прочитанные
+    private void markAllMessagesAsReadCompleted() {
+        SharedPreferences prefs = getSharedPreferences("chat_prefs", MODE_PRIVATE);
+        prefs.edit().putBoolean("messages_read_" + chatId, true).apply();
+    }
 
     // Проверяем, нужно ли отмечать сообщения как прочитанные
     private boolean shouldMarkMessagesAsRead() {
