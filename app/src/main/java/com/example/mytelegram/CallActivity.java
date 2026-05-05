@@ -37,14 +37,12 @@ public class CallActivity extends AppCompatActivity {
     private static final String WS_SERVER_URL = "ws://192.168.31.163:3001";
 
     // Данные звонка
-
     private boolean isFrontCamera = true;
     private String callId;
     private String callerName;
     private String callerId;
     private boolean isVideo;
     private boolean isOutgoing;
-
     private boolean isCallStarted = false;
 
     // UI Components
@@ -108,11 +106,9 @@ public class CallActivity extends AppCompatActivity {
 
         CallManager callManager = CallManager.getInstance(this);
         if (!isOutgoing) {
-            // Для входящего звонка
             callManager.setActiveCall(callId, callerId, callerName, isVideo, false);
             Log.d(TAG, "Set active call in CallManager: callId=" + callId + ", callerId=" + callerId);
         } else {
-            // Для исходящего звонка
             callManager.setActiveCall(callId, callerId, callerName, isVideo, true);
             Log.d(TAG, "Set active call in CallManager: callId=" + callId + ", callerId=" + callerId);
         }
@@ -167,20 +163,16 @@ public class CallActivity extends AppCompatActivity {
     }
 
     private void initWebRTC() {
-        // Создаем Signaling клиент
         signalingClient = new WebSocketSignalingClient(WS_SERVER_URL, currentUserId, currentUserName);
 
-        // Устанавливаем listener
         signalingClient.setListener(new WebSocketSignalingClient.SignalingListener() {
             @Override
             public void onConnected() {
                 Log.d(TAG, "✅ Signaling connected");
-                // Запрашиваем список пользователей
                 signalingClient.getOnlineUsers();
 
                 runOnUiThread(() -> {
                     callStatusText.setText("Подключение...");
-                    // Небольшая задержка для получения списка пользователей
                     new Handler(Looper.getMainLooper()).postDelayed(() -> {
                         startCallProcedure();
                     }, 1000);
@@ -200,26 +192,20 @@ public class CallActivity extends AppCompatActivity {
 
             @Override
             public void onMessage(String message) {
-                // Передаем сообщение в WebRTCClient
                 if (webRtcClient != null) {
                     webRtcClient.onSignalingMessage(message);
                 }
             }
 
-
-
             @Override
             public void onIncomingCall(String callId, String fromUserId, String fromUserName, boolean isVideo) {
-                // Не используется в CallActivity, обрабатывается в MainActivity или IncomingCallActivity
                 Log.d(TAG, "Incoming call from " + fromUserName);
             }
 
             @Override
             public void onCallAccepted(String callId) {
                 Log.d(TAG, "Call accepted: " + callId);
-                runOnUiThread(() -> {
-                    callStatusText.setText("Соединение...");
-                });
+                runOnUiThread(() -> callStatusText.setText("Соединение..."));
             }
 
             @Override
@@ -230,8 +216,6 @@ public class CallActivity extends AppCompatActivity {
                     endCall();
                 });
             }
-
-
 
             @Override
             public void onUserList(JSONArray users) {
@@ -249,11 +233,7 @@ public class CallActivity extends AppCompatActivity {
                                     Log.d(TAG, "✅ Target user " + callerId + " is online!");
                                     isCallStarted = true;
                                     callStatusText.setText("Вызов...");
-
-                                    // ВАЖНО: Сначала создаем WebRTC offer
                                     webRtcClient.startCall(callerId, isVideo);
-
-                                    // Затем отправляем call-request через WebSocket
                                     signalingClient.sendCallRequest(callerId, isVideo);
                                     break;
                                 }
@@ -264,7 +244,6 @@ public class CallActivity extends AppCompatActivity {
 
                         if (!isTargetOnline) {
                             callStatusText.setText("Ожидание пользователя...");
-                            // Повторный запрос через 2 секунды
                             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                                 if (!isCallStarted && isCallActive) {
                                     signalingClient.getOnlineUsers();
@@ -291,8 +270,6 @@ public class CallActivity extends AppCompatActivity {
                 Log.d(TAG, "User " + userId + " is now " + (isOnline ? "online" : "offline"));
             }
 
-            // НОВЫЕ МЕТОДЫ, КОТОРЫХ НЕ ХВАТАЕТ:
-
             @Override
             public void onOfferReceived(String fromUserId, String sdp) {
                 Log.d(TAG, "📞 Offer received from " + fromUserId);
@@ -318,22 +295,25 @@ public class CallActivity extends AppCompatActivity {
             }
         });
 
-        // Создаем WebRTC клиент
         webRtcClient = new WebRTCClient(this, signalingClient);
 
-        // Настраиваем callback WebRTC
         webRtcClient.setCallback(new WebRTCClient.WebRTCCallback() {
             @Override
             public void onLocalStreamReady(VideoTrack videoTrack, AudioTrack audioTrack) {
                 runOnUiThread(() -> {
                     Log.d(TAG, "Local stream ready");
-                    AudioTrack localAudioTrack = audioTrack;
 
                     if (isVideo && videoTrack != null && localVideoView != null) {
                         localVideoView.init(webRtcClient.getEglBaseContext(), null);
                         videoTrack.addSink(localVideoView);
+                        localVideoView.setMirror(true);
+                        localVideoView.setEnableHardwareScaler(true);
                         localVideoContainer.setVisibility(View.VISIBLE);
                         videoPreviewContainer.setVisibility(View.VISIBLE);
+
+                        if (btnSwitchCamera != null) {
+                            btnSwitchCamera.setVisibility(View.VISIBLE);
+                        }
                     }
                 });
             }
@@ -345,6 +325,7 @@ public class CallActivity extends AppCompatActivity {
                     if (isVideo && videoTrack != null && remoteVideoView != null) {
                         remoteVideoView.init(webRtcClient.getEglBaseContext(), null);
                         videoTrack.addSink(remoteVideoView);
+                        remoteVideoView.setEnableHardwareScaler(true);
                         remoteVideoView.setVisibility(View.VISIBLE);
                         videoPreviewContainer.setVisibility(View.VISIBLE);
 
@@ -382,16 +363,13 @@ public class CallActivity extends AppCompatActivity {
 
             @Override
             public void onCallConnected() {
-                // ✅ УЖЕ в runOnUiThread? Проверьте!
                 runOnUiThread(() -> {
                     Log.d(TAG, "✅ Call connected");
                     isConnected = true;
                     callStatusText.setText("В разговоре");
                     callStatusText.setTextColor(getColor(android.R.color.holo_green_dark));
                     startTimer();
-
-                    // Настройка аудио
-                    setupAudioForCall(); // Вынесите в отдельный метод
+                    setupAudioForCall();
                     setupVideoForCall();
                 });
             }
@@ -414,7 +392,6 @@ public class CallActivity extends AppCompatActivity {
             }
         });
 
-        // Подключаемся к серверу
         signalingClient.connect();
     }
 
@@ -423,30 +400,73 @@ public class CallActivity extends AppCompatActivity {
 
         if (audioManager != null) {
             try {
-                // Переключаемся в режим разговора
                 audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-
-                // Устанавливаем максимальную громкость разговорного динамика
                 int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
                 audioManager.setStreamVolume(AudioManager.STREAM_VOICE_CALL, maxVolume, 0);
-
-                // ✅ ВЫКЛЮЧАЕМ громкую связь (звук идет в верхний динамик)
                 audioManager.setSpeakerphoneOn(false);
-                isSpeakerOn = false;  // ← меняем на false
-
-                // Обновляем UI кнопок (теперь динамик выключен)
+                isSpeakerOn = false;
                 updateButtonAlpha(btnSpeaker, isSpeakerOn);
                 updateButtonAlpha(btnVideoSpeaker, isSpeakerOn);
-
-                Log.d(TAG, "Audio configured: mode=COMMUNICATION, volume=" + maxVolume + ", speakerphone=OFF (earpiece mode)");
+                Log.d(TAG, "Audio configured: mode=COMMUNICATION, volume=" + maxVolume + ", speakerphone=OFF");
             } catch (Exception e) {
                 Log.e(TAG, "Error configuring audio: " + e.getMessage());
             }
         }
     }
 
+    private void setupVideoForCall() {
+        Log.d(TAG, "🎥 Configuring video for call...");
 
+        if (isVideo) {
+            if (videoPreviewContainer != null) {
+                videoPreviewContainer.setVisibility(View.VISIBLE);
+            }
+            if (localVideoContainer != null) {
+                localVideoContainer.setVisibility(View.VISIBLE);
+            }
+            if (localVideoView != null && webRtcClient != null) {
+                localVideoView.init(webRtcClient.getEglBaseContext(), null);
+                localVideoView.setMirror(true);
+                localVideoView.setEnableHardwareScaler(true);
+            }
+            if (remoteVideoView != null && webRtcClient != null) {
+                remoteVideoView.init(webRtcClient.getEglBaseContext(), null);
+                remoteVideoView.setEnableHardwareScaler(true);
+            }
+            if (btnSwitchCamera != null) {
+                btnSwitchCamera.setVisibility(View.VISIBLE);
+            }
+            if (callerInfo != null) {
+                callerInfo.setVisibility(View.GONE);
+            }
+            updateVideoButtonsState();
+            Log.d(TAG, "Video UI configured");
+        } else {
+            if (videoPreviewContainer != null) {
+                videoPreviewContainer.setVisibility(View.GONE);
+            }
+            if (localVideoContainer != null) {
+                localVideoContainer.setVisibility(View.GONE);
+            }
+            if (btnSwitchCamera != null) {
+                btnSwitchCamera.setVisibility(View.GONE);
+            }
+            if (callerInfo != null) {
+                callerInfo.setVisibility(View.VISIBLE);
+            }
+        }
+    }
 
+    private void updateVideoButtonsState() {
+        if (btnVideo != null) {
+            btnVideo.setImageResource(isVideoOn ? R.drawable.ic_video : R.drawable.ic_video_off);
+            btnVideo.setAlpha(isVideoOn ? 1.0f : 0.5f);
+        }
+        if (btnVideoMute != null) {
+            btnVideoMute.setImageResource(isVideoOn ? R.drawable.ic_video : R.drawable.ic_video_off);
+            btnVideoMute.setAlpha(isVideoOn ? 1.0f : 0.5f);
+        }
+    }
 
     private void startCallProcedure() {
         if (isCallStarted) {
@@ -461,11 +481,8 @@ public class CallActivity extends AppCompatActivity {
                 endCall();
                 return;
             }
-
-            // Проверяем, онлайн ли пользователь через WebSocket
             signalingClient.getOnlineUsers();
             callStatusText.setText("Проверка пользователя...");
-
         } else {
             if (callId == null) {
                 Log.e(TAG, "callId is null");
@@ -478,8 +495,6 @@ public class CallActivity extends AppCompatActivity {
             callStatusText.setText("Подключение...");
         }
     }
-
-
 
     private void setupClickListeners() {
         btnSpeaker.setOnClickListener(v -> toggleSpeaker());
@@ -503,28 +518,22 @@ public class CallActivity extends AppCompatActivity {
 
     private void toggleSpeaker() {
         isSpeakerOn = !isSpeakerOn;
-
         if (audioManager != null) {
             audioManager.setSpeakerphoneOn(isSpeakerOn);
         }
-
         updateButtonAlpha(btnSpeaker, isSpeakerOn);
         updateButtonAlpha(btnVideoSpeaker, isSpeakerOn);
-
         String message = isSpeakerOn ? "Динамик включен" : "Динамик выключен";
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
     private void toggleMute() {
         isMuted = !isMuted;
-
         updateButtonAlpha(btnMute, !isMuted);
         updateButtonAlpha(btnVideoMute, !isMuted);
-
         if (webRtcClient != null) {
             webRtcClient.toggleAudio(!isMuted);
         }
-
         String message = isMuted ? "Микрофон выключен" : "Микрофон включен";
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
@@ -536,24 +545,28 @@ public class CallActivity extends AppCompatActivity {
         }
 
         isVideoOn = !isVideoOn;
-
         updateButtonAlpha(btnVideo, isVideoOn);
-
+        if (btnVideoMute != null) {
+            updateButtonAlpha(btnVideoMute, isVideoOn);
+        }
         if (webRtcClient != null) {
             webRtcClient.toggleVideo(isVideoOn);
         }
-
         if (localVideoContainer != null) {
             localVideoContainer.setVisibility(isVideoOn ? View.VISIBLE : View.GONE);
         }
-
+        updateVideoButtonsState();
         String message = isVideoOn ? "Камера включена" : "Камера выключена";
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
     private void switchCamera() {
         if (webRtcClient != null) {
+            isFrontCamera = !isFrontCamera;
             webRtcClient.switchCamera();
+            if (localVideoView != null) {
+                localVideoView.setMirror(isFrontCamera);
+            }
             Toast.makeText(this, "Камера переключена", Toast.LENGTH_SHORT).show();
         }
     }
@@ -577,12 +590,10 @@ public class CallActivity extends AppCompatActivity {
             callStatusText.setTextColor(getColor(android.R.color.holo_blue_dark));
         }
 
-        // Показываем/скрываем кнопку видео
         if (btnVideo != null) {
             btnVideo.setVisibility(isVideo ? View.VISIBLE : View.GONE);
         }
 
-        // Для видеозвонка скрываем обычные контролы
         if (isVideo && callControls != null) {
             callControls.setVisibility(View.GONE);
         }
@@ -609,9 +620,7 @@ public class CallActivity extends AppCompatActivity {
                             }
                         }
                     })
-                    .addOnFailureListener(e -> {
-                        Log.e(TAG, "Ошибка загрузки аватара: " + e.getMessage());
-                    });
+                    .addOnFailureListener(e -> Log.e(TAG, "Ошибка загрузки аватара: " + e.getMessage()));
         }
     }
 
@@ -641,78 +650,22 @@ public class CallActivity extends AppCompatActivity {
         timerHandler.post(timerRunnable);
     }
 
-
-
-
-    // Добавьте эти переменные в начало класса (если нет)
-
-
-
-    // Добавьте метод для настройки видео
-    private void setupVideoForCall() {
-        Log.d(TAG, "🎥 Configuring video for call...");
-
-        if (isVideo) {
-            // Показываем контейнеры для видео
-            if (videoPreviewContainer != null) {
-                videoPreviewContainer.setVisibility(View.VISIBLE);
-            }
-            if (localVideoContainer != null) {
-                localVideoContainer.setVisibility(View.VISIBLE);
-            }
-
-            // Настраиваем локальное видео
-            if (localVideoView != null && webRtcClient != null) {
-                localVideoView.init(webRtcClient.getEglBaseContext(), null);
-            }
-
-            Log.d(TAG, "Video UI configured");
-        } else {
-            // Скрываем видео элементы для аудиозвонка
-            if (videoPreviewContainer != null) {
-                videoPreviewContainer.setVisibility(View.GONE);
-            }
-            if (localVideoContainer != null) {
-                localVideoContainer.setVisibility(View.GONE);
-            }
-        }
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     private void endCall() {
         if (!isCallActive) return;
 
         Log.d(TAG, "Ending call");
         isCallActive = false;
 
-        // Останавливаем таймер
         if (timerHandler != null && timerRunnable != null) {
             timerHandler.removeCallbacks(timerRunnable);
             timerHandler = null;
             timerRunnable = null;
         }
 
-        // ✅ Завершаем WebRTC (важно делать это в правильном порядке)
         if (webRtcClient != null) {
             webRtcClient.hangUp();
-            // Не вызываем dispose() здесь, это сделает onDestroy
         }
 
-        // Восстанавливаем аудио
         if (audioManager != null) {
             audioManager.setMode(AudioManager.MODE_NORMAL);
             audioManager.setSpeakerphoneOn(false);
@@ -726,27 +679,23 @@ public class CallActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
 
-        // ✅ Останавливаем таймер
         if (timerHandler != null && timerRunnable != null) {
             timerHandler.removeCallbacks(timerRunnable);
             timerHandler = null;
             timerRunnable = null;
         }
 
-        // ✅ Правильно завершаем WebRTC
         if (webRtcClient != null && isCallActive) {
             webRtcClient.hangUp();
             webRtcClient.dispose();
             webRtcClient = null;
         }
 
-        // ✅ Отключаем signaling
         if (signalingClient != null) {
             signalingClient.disconnect();
             signalingClient = null;
         }
 
-        // ✅ Снимаем флаги с окна
         getWindow().clearFlags(
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
                         WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
@@ -756,11 +705,11 @@ public class CallActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
-        super.onBackPressed();
         if (isCallActive && isConnected) {
             Toast.makeText(this, "Используйте кнопку завершения звонка", Toast.LENGTH_SHORT).show();
         } else {
             endCall();
         }
+        super.onBackPressed();
     }
 }
