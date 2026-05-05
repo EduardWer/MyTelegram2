@@ -107,7 +107,13 @@ public class HomeFragment extends Fragment {
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
-        return inflater.inflate(R.layout.fragment_chats_list, container, false);
+        View view = inflater.inflate(R.layout.fragment_chats_list, container, false);
+
+        // ✅ Восстанавливаем ссылки на views
+        recyclerView = view.findViewById(R.id.recyclerViewChats);
+        progressBar = view.findViewById(R.id.progressBar);
+
+        return view;
     }
 
     @Override
@@ -115,10 +121,19 @@ public class HomeFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
         recyclerView = view.findViewById(R.id.recyclerViewChats);
         progressBar = view.findViewById(R.id.progressBar);
+
+        // ✅ ВАЖНО: Пересоздаем адаптер
+        if (adapter == null) {
+            adapter = new ChatsAdapter(new ArrayList<>(), chat -> openChat(chat));
+        }
         setupRecyclerView();
         setupSwipeToDelete();
 
-        if (!dataLoaded) {
+        // Если данные уже загружены, просто обновляем адаптер
+        if (dataLoaded && !loadedChats.isEmpty()) {
+            updateAdapter();
+            showLoading(false);
+        } else if (!dataLoaded) {
             loadGroupsThenChats();
         }
     }
@@ -956,37 +971,67 @@ public class HomeFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
+
+        Log.d(TAG, "onResume - dataLoaded=" + dataLoaded +
+                ", adapter=" + (adapter != null) +
+                ", loadedChats size=" + loadedChats.size());
+
         if (dataLoaded && adapter != null) {
+            updateAdapter();
+
             for (Chat chat : loadedChats.values()) {
                 if (chat.getUnreadCount() > 0) {
                     updateSingleChat(chat);
                 }
             }
+        } else if (!dataLoaded) {
+            // Если данные не загружены - загружаем
+            loadGroupsThenChats();
         }
     }
 
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+
+        Log.d(TAG, "onDestroyView - cleaning up listeners, keeping data");
+
+        // Удаляем слушатели чатов
         if (chatsListener != null) {
             databaseReference.child("chats").removeEventListener(chatsListener);
+            chatsListener = null;
         }
+
+        // Удаляем слушатели групп
         if (groupsListener != null) {
             databaseReference.child("groups").removeEventListener(groupsListener);
+            groupsListener = null;
         }
+
+        // Удаляем слушатели онлайн-статуса
         for (Map.Entry<String, ValueEventListener> entry : onlineListeners.entrySet()) {
             databaseReference.child("users").child(entry.getKey()).child("online")
                     .removeEventListener(entry.getValue());
         }
+        onlineListeners.clear();
+
+        // Удаляем слушатели сообщений
         for (Map.Entry<String, ValueEventListener> entry : chatMessageListeners.entrySet()) {
             databaseReference.child("chats").child(entry.getKey()).child("messages")
                     .removeEventListener(entry.getValue());
         }
-        onlineListeners.clear();
         chatMessageListeners.clear();
-        userInfoLoaded.clear();
-        userNameCache.clear();
-        userAvatarCache.clear();
-        dataLoaded = false;
+
+        // ✅ НЕ ОЧИЩАЕМ ДАННЫЕ!
+        // loadedChats остается
+        // userInfoLoaded остается
+        // userNameCache остается
+        // userAvatarCache остается
+        // dataLoaded НЕ МЕНЯЕМ!
+
+        // Обнуляем views
+        recyclerView = null;
+        progressBar = null;
+        adapter = null;
     }
 }
