@@ -142,25 +142,36 @@ public class WebRTCClient {
     }
 
     private void createVideoTrack() {
-        Log.d(TAG, "Creating video track...");
+        Log.d(TAG, "🎥 Creating video track...");
         try {
             videoSource = peerConnectionFactory.createVideoSource(false);
             videoCapturer = createCameraCapturer();
 
             if (videoCapturer != null) {
+                // ✅ ПРИНУДИТЕЛЬНО УСТАНАВЛИВАЕМ РАЗРЕШЕНИЕ
                 SurfaceTextureHelper surfaceTextureHelper = SurfaceTextureHelper.create(
                         "CaptureThread", rootEglBase.getEglBaseContext());
+
+                // Пробуем разные популярные разрешения
+                int width = 640;
+                int height = 480;
+
+                // Если фронтальная камера, можно меньше
+                if (isFrontCamera) {
+                    width = 480;
+                    height = 640;
+                }
+
                 videoCapturer.initialize(surfaceTextureHelper, context, videoSource.getCapturerObserver());
-                videoCapturer.startCapture(1280, 720, 30);
+                videoCapturer.startCapture(width, height, 30);
+                Log.d(TAG, "✅ Video capture started at " + width + "x" + height + ", 30fps");
 
                 localVideoTrack = peerConnectionFactory.createVideoTrack("video_track", videoSource);
                 localVideoTrack.setEnabled(true);
                 Log.d(TAG, "✅ Video track created successfully");
-            } else {
-                Log.e(TAG, "Failed to create video capturer");
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error creating video track: " + e.getMessage());
+            Log.e(TAG, "Error creating video track: " + e.getMessage(), e);
         }
     }
 

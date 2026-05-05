@@ -72,6 +72,10 @@ public class CallActivity extends AppCompatActivity {
     private boolean isCallActive = true;
     private boolean isConnected = false;
 
+    // Флаги для отслеживания инициализации
+    private boolean isLocalVideoViewInitialized = false;
+    private boolean isRemoteVideoViewInitialized = false;
+
     // Таймер
     private Handler timerHandler;
     private Runnable timerRunnable;
@@ -91,7 +95,6 @@ public class CallActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_call);
 
-        // Держим экран включенным
         getWindow().addFlags(
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
                         WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
@@ -298,21 +301,36 @@ public class CallActivity extends AppCompatActivity {
         webRtcClient = new WebRTCClient(this, signalingClient);
 
         webRtcClient.setCallback(new WebRTCClient.WebRTCCallback() {
+
             @Override
             public void onLocalStreamReady(VideoTrack videoTrack, AudioTrack audioTrack) {
                 runOnUiThread(() -> {
                     Log.d(TAG, "Local stream ready");
 
+                    if (audioTrack != null && isMuted) {
+                        audioTrack.setEnabled(false);
+                    }
+
                     if (isVideo && videoTrack != null && localVideoView != null) {
-                        localVideoView.init(webRtcClient.getEglBaseContext(), null);
+                        if (!isLocalVideoViewInitialized) {
+                            localVideoView.init(webRtcClient.getEglBaseContext(), null);
+                            localVideoView.setMirror(true);
+                            localVideoView.setEnableHardwareScaler(true);
+                            isLocalVideoViewInitialized = true;
+                        }
                         videoTrack.addSink(localVideoView);
-                        localVideoView.setMirror(true);
-                        localVideoView.setEnableHardwareScaler(true);
                         localVideoContainer.setVisibility(View.VISIBLE);
                         videoPreviewContainer.setVisibility(View.VISIBLE);
 
                         if (btnSwitchCamera != null) {
                             btnSwitchCamera.setVisibility(View.VISIBLE);
+                        }
+                    } else {
+                        if (localVideoContainer != null) {
+                            localVideoContainer.setVisibility(View.GONE);
+                        }
+                        if (btnSwitchCamera != null) {
+                            btnSwitchCamera.setVisibility(View.GONE);
                         }
                     }
                 });
@@ -323,9 +341,12 @@ public class CallActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     Log.d(TAG, "Remote video track received");
                     if (isVideo && videoTrack != null && remoteVideoView != null) {
-                        remoteVideoView.init(webRtcClient.getEglBaseContext(), null);
+                        if (!isRemoteVideoViewInitialized) {
+                            remoteVideoView.init(webRtcClient.getEglBaseContext(), null);
+                            remoteVideoView.setEnableHardwareScaler(true);
+                            isRemoteVideoViewInitialized = true;
+                        }
                         videoTrack.addSink(remoteVideoView);
-                        remoteVideoView.setEnableHardwareScaler(true);
                         remoteVideoView.setVisibility(View.VISIBLE);
                         videoPreviewContainer.setVisibility(View.VISIBLE);
 
@@ -424,15 +445,21 @@ public class CallActivity extends AppCompatActivity {
             if (localVideoContainer != null) {
                 localVideoContainer.setVisibility(View.VISIBLE);
             }
-            if (localVideoView != null && webRtcClient != null) {
+
+            // ✅ НЕ вызываем init() здесь - только если localVideoView еще не инициализирован
+            if (localVideoView != null && webRtcClient != null && !isLocalVideoViewInitialized) {
                 localVideoView.init(webRtcClient.getEglBaseContext(), null);
                 localVideoView.setMirror(true);
                 localVideoView.setEnableHardwareScaler(true);
+                isLocalVideoViewInitialized = true;
             }
-            if (remoteVideoView != null && webRtcClient != null) {
+
+            if (remoteVideoView != null && webRtcClient != null && !isRemoteVideoViewInitialized) {
                 remoteVideoView.init(webRtcClient.getEglBaseContext(), null);
                 remoteVideoView.setEnableHardwareScaler(true);
+                isRemoteVideoViewInitialized = true;
             }
+
             if (btnSwitchCamera != null) {
                 btnSwitchCamera.setVisibility(View.VISIBLE);
             }
