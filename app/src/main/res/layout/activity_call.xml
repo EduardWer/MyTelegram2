@@ -78,7 +78,7 @@
 
     </LinearLayout>
 
-    <!-- Кнопки управления звонком -->
+    <!-- Кнопки управления звонком для аудио режима -->
     <LinearLayout
         android:id="@+id/call_controls"
         android:layout_width="match_parent"
@@ -90,7 +90,6 @@
         android:paddingHorizontal="20dp"
         android:visibility="visible">
 
-        <!-- Кнопка "Динамик" -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -117,7 +116,6 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
-        <!-- Кнопка "Микрофон" -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -144,7 +142,6 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
-        <!-- Кнопка "Видео" -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -171,7 +168,6 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
-        <!-- Кнопка "Завершить" (красная) -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -200,7 +196,7 @@
 
     </LinearLayout>
 
-    <!-- Видеопревью (для видеозвонков - показывается поверх всего) -->
+    <!-- Видеопревью (для видеозвонков) -->
     <FrameLayout
         android:id="@+id/video_preview_container"
         android:layout_width="match_parent"
@@ -211,7 +207,8 @@
         <org.webrtc.SurfaceViewRenderer
             android:id="@+id/remote_video_view"
             android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+            android:layout_height="match_parent"
+            android:keepScreenOn="true" />
 
         <!-- Своё видео (маленькое окно в углу) -->
         <FrameLayout
@@ -221,7 +218,8 @@
             android:layout_margin="16dp"
             android:layout_gravity="top|end"
             android:background="#000000"
-            android:visibility="gone">
+            android:visibility="gone"
+            android:elevation="8dp">
 
             <org.webrtc.SurfaceViewRenderer
                 android:id="@+id/local_video_view"
@@ -236,58 +234,62 @@
 
         </FrameLayout>
 
-        <!-- Кнопки управления поверх видео -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:layout_marginBottom="40dp"
-            android:gravity="center"
-            android:orientation="horizontal"
-            android:paddingHorizontal="20dp">
-
-            <ImageButton
-                android:id="@+id/btn_video_speaker"
-                android:layout_width="56dp"
-                android:layout_height="56dp"
-                android:layout_margin="8dp"
-                android:background="@drawable/circle_button_bg"
-                android:padding="12dp"
-                android:src="@drawable/ic_speaker"
-                app:tint="#FFFFFF" />
-
-            <ImageButton
-                android:id="@+id/btn_video_mute"
-                android:layout_width="56dp"
-                android:layout_height="56dp"
-                android:layout_margin="8dp"
-                android:background="@drawable/circle_button_bg"
-                android:padding="12dp"
-                android:src="@drawable/ic_microphone"
-                app:tint="#FFFFFF" />
-
-            <ImageButton
-                android:id="@+id/btn_switch_camera"
-                android:layout_width="56dp"
-                android:layout_height="56dp"
-                android:layout_margin="8dp"
-                android:background="@drawable/circle_button_bg"
-                android:padding="12dp"
-                android:src="@drawable/ic_switch_camera"
-                app:tint="#FFFFFF" />
-
-            <ImageButton
-                android:id="@+id/btn_video_end_call"
-                android:layout_width="56dp"
-                android:layout_height="56dp"
-                android:layout_margin="8dp"
-                android:background="@drawable/decline_button_bg"
-                android:padding="12dp"
-                android:src="@drawable/ic_call"
-                app:tint="#FFFFFF" />
-
-        </LinearLayout>
-
+        <!-- Кнопки управления поверх видео - теперь вне FrameLayout -->
     </FrameLayout>
+
+    <!-- ✅ КНОПКИ УПРАВЛЕНИЯ ВИДЕО - ОТДЕЛЬНО от video_preview_container -->
+    <LinearLayout
+        android:id="@+id/video_controls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_marginBottom="40dp"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingHorizontal="20dp"
+        android:visibility="gone"
+        android:elevation="10dp">
+
+        <ImageButton
+            android:id="@+id/btn_video_speaker"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_margin="8dp"
+            android:background="@drawable/circle_button_bg"
+            android:padding="12dp"
+            android:src="@drawable/ic_speaker"
+            app:tint="#FFFFFF" />
+
+        <ImageButton
+            android:id="@+id/btn_video_mute"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_margin="8dp"
+            android:background="@drawable/circle_button_bg"
+            android:padding="12dp"
+            android:src="@drawable/ic_microphone"
+            app:tint="#FFFFFF" />
+
+        <ImageButton
+            android:id="@+id/btn_switch_camera"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_margin="8dp"
+            android:background="@drawable/circle_button_bg"
+            android:padding="12dp"
+            android:src="@drawable/ic_switch_camera"
+            app:tint="#FFFFFF" />
+
+        <ImageButton
+            android:id="@+id/btn_video_end_call"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_margin="8dp"
+            android:background="@drawable/decline_button_bg"
+            android:padding="12dp"
+            android:src="@drawable/ic_call"
+            app:tint="#FFFFFF" />
+
+    </LinearLayout>
 
 </RelativeLayout>

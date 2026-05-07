@@ -1021,6 +1021,10 @@ public class HomeFragment extends Fragment {
                     .removeEventListener(entry.getValue());
         }
         chatMessageListeners.clear();
+      
+        userInfoLoaded.clear();
+        userNameCache.clear();
+        userAvatarCache.clear();
 
         // ✅ НЕ ОЧИЩАЕМ ДАННЫЕ!
         // loadedChats остается

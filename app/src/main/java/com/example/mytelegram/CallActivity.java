@@ -1,5 +1,6 @@
 package com.example.mytelegram;
 
+import android.app.AlertDialog;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
@@ -12,6 +13,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -25,6 +27,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.webrtc.AudioTrack;
+import org.webrtc.EglBase;
 import org.webrtc.PeerConnection;
 import org.webrtc.SurfaceViewRenderer;
 import org.webrtc.VideoTrack;
@@ -40,6 +43,7 @@ public class CallActivity extends AppCompatActivity {
     private boolean isFrontCamera = true;
     private String callId;
     private String callerName;
+    private LinearLayout videoControls;
     private String callerId;
     private boolean isVideo;
     private boolean isOutgoing;
@@ -125,6 +129,7 @@ public class CallActivity extends AppCompatActivity {
         btnSpeaker = findViewById(R.id.btn_speaker);
         btnMute = findViewById(R.id.btn_mute);
         btnVideo = findViewById(R.id.btn_video);
+        videoControls = findViewById(R.id.video_controls);
         btnEndCall = findViewById(R.id.btn_end_call);
         videoPreviewContainer = findViewById(R.id.video_preview_container);
         remoteVideoView = findViewById(R.id.remote_video_view);
@@ -307,31 +312,22 @@ public class CallActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     Log.d(TAG, "Local stream ready");
 
+                    // ВАЖНО: сначала инициализируем вьюшки
+                    initVideoViewsIfNeeded();
+
                     if (audioTrack != null && isMuted) {
                         audioTrack.setEnabled(false);
                     }
 
-                    if (isVideo && videoTrack != null && localVideoView != null) {
-                        if (!isLocalVideoViewInitialized) {
-                            localVideoView.init(webRtcClient.getEglBaseContext(), null);
-                            localVideoView.setMirror(true);
-                            localVideoView.setEnableHardwareScaler(true);
-                            isLocalVideoViewInitialized = true;
-                        }
+                    if (isVideo && videoTrack != null && localVideoView != null && isLocalVideoViewInitialized) {
                         videoTrack.addSink(localVideoView);
                         localVideoContainer.setVisibility(View.VISIBLE);
                         videoPreviewContainer.setVisibility(View.VISIBLE);
-
-                        if (btnSwitchCamera != null) {
-                            btnSwitchCamera.setVisibility(View.VISIBLE);
-                        }
+                        Log.d(TAG, "✅ Local video track attached to view");
                     } else {
-                        if (localVideoContainer != null) {
-                            localVideoContainer.setVisibility(View.GONE);
-                        }
-                        if (btnSwitchCamera != null) {
-                            btnSwitchCamera.setVisibility(View.GONE);
-                        }
+                        Log.w(TAG, "Cannot attach local video - videoTrack=" + (videoTrack != null)
+                                + ", isVideo=" + isVideo
+                                + ", viewInit=" + isLocalVideoViewInitialized);
                     }
                 });
             }
@@ -340,12 +336,11 @@ public class CallActivity extends AppCompatActivity {
             public void onRemoteVideoTrack(VideoTrack videoTrack) {
                 runOnUiThread(() -> {
                     Log.d(TAG, "Remote video track received");
-                    if (isVideo && videoTrack != null && remoteVideoView != null) {
-                        if (!isRemoteVideoViewInitialized) {
-                            remoteVideoView.init(webRtcClient.getEglBaseContext(), null);
-                            remoteVideoView.setEnableHardwareScaler(true);
-                            isRemoteVideoViewInitialized = true;
-                        }
+
+                    // ВАЖНО: инициализируем remote view перед прикреплением трека
+                    initVideoViewsIfNeeded();
+
+                    if (isVideo && videoTrack != null && remoteVideoView != null && isRemoteVideoViewInitialized) {
                         videoTrack.addSink(remoteVideoView);
                         remoteVideoView.setVisibility(View.VISIBLE);
                         videoPreviewContainer.setVisibility(View.VISIBLE);
@@ -353,6 +348,11 @@ public class CallActivity extends AppCompatActivity {
                         if (callerInfo != null) {
                             callerInfo.setVisibility(View.GONE);
                         }
+                        Log.d(TAG, "✅ Remote video track attached to view");
+                    } else {
+                        Log.w(TAG, "Cannot attach remote video - videoTrack=" + (videoTrack != null)
+                                + ", isVideo=" + isVideo
+                                + ", viewInit=" + isRemoteVideoViewInitialized);
                     }
                 });
             }
@@ -416,6 +416,102 @@ public class CallActivity extends AppCompatActivity {
         signalingClient.connect();
     }
 
+
+
+
+    // Добавьте этот метод в CallActivity для более надежной инициализации
+    private void initRemoteVideoViewIfNeeded() {
+        if (remoteVideoView == null) {
+            Log.e(TAG, "remoteVideoView is null!");
+            return;
+        }
+
+        if (isRemoteVideoViewInitialized) {
+            Log.d(TAG, "Remote video view already initialized");
+            return;
+        }
+
+        if (webRtcClient == null) {
+            Log.w(TAG, "WebRTC client is null, cannot init remote video");
+            return;
+        }
+
+        EglBase.Context eglContext = webRtcClient.getEglBaseContext();
+        if (eglContext == null) {
+            Log.w(TAG, "EglBase context is null, will retry later");
+            // Повторная попытка через 500ms
+            new Handler(Looper.getMainLooper()).postDelayed(() -> initRemoteVideoViewIfNeeded(), 500);
+            return;
+        }
+
+        try {
+            remoteVideoView.init(eglContext, null);
+            remoteVideoView.setEnableHardwareScaler(true);
+            isRemoteVideoViewInitialized = true;
+            Log.d(TAG, "✅ Remote video view initialized successfully");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to init remote video view: " + e.getMessage());
+        }
+    }
+
+    // Обновите существующий onRemoteVideoTrack
+
+    public void onRemoteVideoTrack(VideoTrack videoTrack) {
+        runOnUiThread(() -> {
+            Log.d(TAG, "🎥 REMOTE VIDEO TRACK RECEIVED! Track: " + videoTrack.id());
+
+            if (videoTrack == null) {
+                Log.e(TAG, "Video track is null!");
+                return;
+            }
+
+            if (remoteVideoView == null) {
+                Log.e(TAG, "remoteVideoView is null!");
+                return;
+            }
+
+            // Инициализируем remoteVideoView если нужно
+            if (!isRemoteVideoViewInitialized) {
+                initRemoteVideoViewIfNeeded();
+            }
+
+            // Если не инициализировался с первого раза, ждем
+            if (!isRemoteVideoViewInitialized) {
+                Log.w(TAG, "Remote video view not initialized yet, retrying in 500ms");
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    if (videoTrack != null && remoteVideoView != null) {
+                        initRemoteVideoViewIfNeeded();
+                        if (isRemoteVideoViewInitialized) {
+                            videoTrack.addSink(remoteVideoView);
+                            remoteVideoView.setVisibility(View.VISIBLE);
+                            Log.d(TAG, "✅ Remote video track attached after delay");
+                        }
+                    }
+                }, 500);
+                return;
+            }
+
+            // Прикрепляем видео трек
+            videoTrack.addSink(remoteVideoView);
+            remoteVideoView.setVisibility(View.VISIBLE);
+
+            if (videoPreviewContainer != null) {
+                videoPreviewContainer.setVisibility(View.VISIBLE);
+            }
+
+            if (callerInfo != null) {
+                callerInfo.setVisibility(View.GONE);
+            }
+
+            Log.d(TAG, "✅ Remote video track attached to view successfully");
+        });
+    }
+
+
+
+
+
+
     private void setupAudioForCall() {
         Log.d(TAG, "🎧 Configuring audio for call (earpiece mode)...");
 
@@ -435,6 +531,13 @@ public class CallActivity extends AppCompatActivity {
         }
     }
 
+
+
+
+
+
+
+
     private void setupVideoForCall() {
         Log.d(TAG, "🎥 Configuring video for call...");
 
@@ -446,19 +549,8 @@ public class CallActivity extends AppCompatActivity {
                 localVideoContainer.setVisibility(View.VISIBLE);
             }
 
-            // ✅ НЕ вызываем init() здесь - только если localVideoView еще не инициализирован
-            if (localVideoView != null && webRtcClient != null && !isLocalVideoViewInitialized) {
-                localVideoView.init(webRtcClient.getEglBaseContext(), null);
-                localVideoView.setMirror(true);
-                localVideoView.setEnableHardwareScaler(true);
-                isLocalVideoViewInitialized = true;
-            }
-
-            if (remoteVideoView != null && webRtcClient != null && !isRemoteVideoViewInitialized) {
-                remoteVideoView.init(webRtcClient.getEglBaseContext(), null);
-                remoteVideoView.setEnableHardwareScaler(true);
-                isRemoteVideoViewInitialized = true;
-            }
+            // НЕ вызываем init() здесь!
+            // Просто показываем контейнеры, а инициализация произойдет при получении видео треков
 
             if (btnSwitchCamera != null) {
                 btnSwitchCamera.setVisibility(View.VISIBLE);
@@ -467,7 +559,7 @@ public class CallActivity extends AppCompatActivity {
                 callerInfo.setVisibility(View.GONE);
             }
             updateVideoButtonsState();
-            Log.d(TAG, "Video UI configured");
+            Log.d(TAG, "Video UI configured (views will be initialized when video tracks arrive)");
         } else {
             if (videoPreviewContainer != null) {
                 videoPreviewContainer.setVisibility(View.GONE);
@@ -480,6 +572,56 @@ public class CallActivity extends AppCompatActivity {
             }
             if (callerInfo != null) {
                 callerInfo.setVisibility(View.VISIBLE);
+            }
+        }
+    }
+
+    // Новый метод для безопасной инициализации видео вьюшек
+    private void initVideoViewsIfNeeded() {
+        if (webRtcClient == null) {
+            Log.w(TAG, "WebRTC client is null, cannot init video views");
+            return;
+        }
+
+        EglBase.Context eglContext = webRtcClient.getEglBaseContext();
+        if (eglContext == null) {
+            Log.w(TAG, "EglBase context is null, will retry later");
+            return;
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+        // Инициализация локального видео
+        if (localVideoView != null && !isLocalVideoViewInitialized && isVideo) {
+            try {
+                localVideoView.init(eglContext, null);
+                localVideoView.setMirror(isFrontCamera);
+                localVideoView.setEnableHardwareScaler(true);
+                isLocalVideoViewInitialized = true;
+                Log.d(TAG, "✅ Local video view initialized");
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to init local video view: " + e.getMessage());
+            }
+        }
+
+        // Инициализация удаленного видео
+        if (remoteVideoView != null && !isRemoteVideoViewInitialized && isVideo) {
+            try {
+                remoteVideoView.init(eglContext, null);
+                remoteVideoView.setEnableHardwareScaler(true);
+                isRemoteVideoViewInitialized = true;
+                Log.d(TAG, "✅ Remote video view initialized");
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to init remote video view: " + e.getMessage());
             }
         }
     }
@@ -567,10 +709,13 @@ public class CallActivity extends AppCompatActivity {
 
     private void toggleVideo() {
         if (!isVideo) {
-            Toast.makeText(this, "Это аудиозвонок", Toast.LENGTH_SHORT).show();
+            // ✅ Это аудиозвонок - переключаемся на видеозвонок
+            Log.d(TAG, "Switching from audio to video call");
+            showSwitchToVideoDialog();
             return;
         }
 
+        // Существующий код для включения/выключения камеры
         isVideoOn = !isVideoOn;
         updateButtonAlpha(btnVideo, isVideoOn);
         if (btnVideoMute != null) {
@@ -585,6 +730,66 @@ public class CallActivity extends AppCompatActivity {
         updateVideoButtonsState();
         String message = isVideoOn ? "Камера включена" : "Камера выключена";
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
+
+    private void showSwitchToVideoDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Включить видео")
+                .setMessage("Переключиться на видеозвонок?")
+                .setPositiveButton("Да", (dialog, which) -> switchToVideoCall())
+                .setNegativeButton("Нет", null)
+                .show();
+    }
+
+    private void switchToVideoCall() {
+        Log.d(TAG, "🔄 Switching to video call...");
+
+        // 1. Меняем тип звонка
+        isVideo = true;
+        isVideoOn = true;
+
+        // 2. Обновляем UI
+        updateUIForVideoCall();
+
+        Toast.makeText(this, "Видеорежим включен", Toast.LENGTH_SHORT).show();
+    }
+
+
+
+
+
+
+    private void updateUIForVideoCall() {
+        // Показываем видео-контейнеры
+        if (videoPreviewContainer != null) {
+            videoPreviewContainer.setVisibility(View.VISIBLE);
+        }
+        if (localVideoContainer != null) {
+            localVideoContainer.setVisibility(View.VISIBLE);
+        }
+
+        // Переключаем контролы
+        if (videoControls != null) {
+            videoControls.setVisibility(View.VISIBLE);
+        }
+        if (callControls != null) {
+            callControls.setVisibility(View.GONE);
+        }
+        if (callerInfo != null) {
+            callerInfo.setVisibility(View.GONE);
+        }
+
+        // Показываем кнопку переключения камеры
+        if (btnSwitchCamera != null) {
+            btnSwitchCamera.setVisibility(View.VISIBLE);
+        }
+
+        // Скрываем кнопку "Видео" в аудио-контролах
+        if (btnVideo != null) {
+            btnVideo.setVisibility(View.GONE);
+        }
+
+        updateVideoButtonsState();
     }
 
     private void switchCamera() {
@@ -617,12 +822,43 @@ public class CallActivity extends AppCompatActivity {
             callStatusText.setTextColor(getColor(android.R.color.holo_blue_dark));
         }
 
-        if (btnVideo != null) {
-            btnVideo.setVisibility(isVideo ? View.VISIBLE : View.GONE);
-        }
-
-        if (isVideo && callControls != null) {
-            callControls.setVisibility(View.GONE);
+        // ✅ КЛЮЧЕВОЕ: переключаем контролы в зависимости от типа звонка
+        if (isVideo) {
+            // ВИДЕО ЗВОНОК - показываем видео-контролы
+            if (videoControls != null) {
+                videoControls.setVisibility(View.VISIBLE);
+                Log.d(TAG, "videoControls set to VISIBLE");
+            }
+            if (callControls != null) {
+                callControls.setVisibility(View.GONE);
+                Log.d(TAG, "callControls set to GONE");
+            }
+            if (videoPreviewContainer != null) {
+                videoPreviewContainer.setVisibility(View.VISIBLE);
+            }
+            if (callerInfo != null) {
+                callerInfo.setVisibility(View.GONE);
+            }
+            if (btnVideo != null) {
+                btnVideo.setVisibility(View.GONE);
+            }
+        } else {
+            // АУДИО ЗВОНОК - показываем аудио-контролы
+            if (videoControls != null) {
+                videoControls.setVisibility(View.GONE);
+            }
+            if (callControls != null) {
+                callControls.setVisibility(View.VISIBLE);
+            }
+            if (videoPreviewContainer != null) {
+                videoPreviewContainer.setVisibility(View.GONE);
+            }
+            if (callerInfo != null) {
+                callerInfo.setVisibility(View.VISIBLE);
+            }
+            if (btnVideo != null) {
+                btnVideo.setVisibility(View.VISIBLE);
+            }
         }
 
         loadCallerAvatar();

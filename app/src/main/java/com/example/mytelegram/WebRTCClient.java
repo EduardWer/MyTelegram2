@@ -175,6 +175,11 @@ public class WebRTCClient {
         }
     }
 
+
+
+
+
+
     private VideoCapturer createCameraCapturer() {
         Log.d(TAG, "Creating camera capturer, front=" + isFrontCamera);
 
@@ -187,7 +192,7 @@ public class WebRTCClient {
 
         String[] deviceNames = enumerator.getDeviceNames();
 
-        // Ищем камеру с нужным направлением
+
         for (String deviceName : deviceNames) {
             if (isFrontCamera && enumerator.isFrontFacing(deviceName)) {
                 VideoCapturer capturer = enumerator.createCapturer(deviceName, null);
@@ -204,7 +209,7 @@ public class WebRTCClient {
             }
         }
 
-        // Если не нашли нужную, берем любую доступную
+
         for (String deviceName : deviceNames) {
             VideoCapturer capturer = enumerator.createCapturer(deviceName, null);
             if (capturer != null) {
@@ -295,23 +300,40 @@ public class WebRTCClient {
                 Log.d(TAG, "onRenegotiationNeeded");
             }
 
+
+            // Добавьте этот метод для отладки
+            public boolean hasRemoteVideoTrack() {
+                if (peerConnection == null) return false;
+
+                // Проверяем получаемые треки
+                List<RtpReceiver> receivers = new ArrayList<>();
+                // Примечание: в WebRTC нет прямого метода getReceivers, но можно через getSenders
+                // или просто положиться на onAddTrack
+
+                return false;
+            }
+
+            // Улучшите onAddTrack для лучшего логирования
             @Override
             public void onAddTrack(RtpReceiver rtpReceiver, MediaStream[] mediaStreams) {
-                Log.d(TAG, "onAddTrack: " + rtpReceiver.id());
+                Log.d(TAG, "onAddTrack: " + rtpReceiver.id() + ", track type: " +
+                        (rtpReceiver.track() instanceof VideoTrack ? "VIDEO" :
+                                rtpReceiver.track() instanceof AudioTrack ? "AUDIO" : "UNKNOWN"));
 
-                if (mediaStreams.length > 0) {
-                    if (rtpReceiver.track() instanceof VideoTrack) {
-                        VideoTrack remoteVideoTrack = (VideoTrack) rtpReceiver.track();
-                        Log.d(TAG, "✅ Remote video track received");
-                        if (callback != null) {
-                            callback.onRemoteVideoTrack(remoteVideoTrack);
-                        }
-                    } else if (rtpReceiver.track() instanceof AudioTrack) {
-                        AudioTrack remoteAudioTrack = (AudioTrack) rtpReceiver.track();
-                        Log.d(TAG, "✅ Remote audio track received");
-                        if (callback != null) {
-                            callback.onRemoteAudioTrack(remoteAudioTrack);
-                        }
+                if (rtpReceiver.track() instanceof VideoTrack) {
+                    VideoTrack remoteVideoTrack = (VideoTrack) rtpReceiver.track();
+                    Log.d(TAG, "✅ Remote video track received, id: " + remoteVideoTrack.id());
+                    Log.d(TAG, "✅ Remote video track enabled: " + remoteVideoTrack.enabled());
+
+                    if (callback != null) {
+                        callback.onRemoteVideoTrack(remoteVideoTrack);
+                    }
+                } else if (rtpReceiver.track() instanceof AudioTrack) {
+                    AudioTrack remoteAudioTrack = (AudioTrack) rtpReceiver.track();
+                    Log.d(TAG, "✅ Remote audio track received, id: " + remoteAudioTrack.id());
+
+                    if (callback != null) {
+                        callback.onRemoteAudioTrack(remoteAudioTrack);
                     }
                 }
             }
@@ -352,6 +374,45 @@ public class WebRTCClient {
 
         peerConnection.createOffer(createSdpObserver(true), constraints);
     }
+
+
+
+
+
+
+
+    private void recreatePeerConnectionWithVideo() {
+        if (peerConnection != null && targetUserId != null) {
+            // Создаем новый offer с видео
+            MediaConstraints constraints = new MediaConstraints();
+            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
+            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"));
+
+            peerConnection.createOffer(new SdpObserver() {
+                @Override
+                public void onCreateSuccess(SessionDescription sessionDescription) {
+                    peerConnection.setLocalDescription(new SdpObserver() {
+                        @Override
+                        public void onSetSuccess() {
+                            if (signalingClient != null && targetUserId != null) {
+                                signalingClient.sendOffer(targetUserId, sessionDescription.description);
+                            }
+                        }
+                        @Override public void onCreateSuccess(SessionDescription sd) {}
+                        @Override public void onSetFailure(String s) {}
+                        @Override public void onCreateFailure(String s) {}
+                    }, sessionDescription);
+                }
+                @Override public void onSetSuccess() {}
+                @Override public void onCreateFailure(String s) {}
+                @Override public void onSetFailure(String s) {}
+            }, constraints);
+        }
+    }
+
+
+
+
 
     public void acceptCall(String callerId, boolean isVideo) {
         Log.d(TAG, "Accepting call from: " + callerId + ", isVideo=" + isVideo);
