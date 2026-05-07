@@ -4,7 +4,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#1A1A2E"
-    android:keepScreenOn="true">
+    android:keepScreenOn="true"
+    android:id="@+id/main_layout">
 
     <!-- Фон с аватаром звонящего -->
     <ImageView
@@ -33,7 +34,6 @@
         android:paddingHorizontal="24dp"
         android:visibility="visible">
 
-        <!-- Аватар звонящего -->
         <de.hdodenhof.circleimageview.CircleImageView
             android:id="@+id/caller_avatar"
             android:layout_width="120dp"
@@ -42,7 +42,6 @@
             app:civ_border_width="3dp"
             app:civ_border_color="#FFFFFF" />
 
-        <!-- Имя звонящего -->
         <TextView
             android:id="@+id/caller_name"
             android:layout_width="wrap_content"
@@ -54,7 +53,6 @@
             android:textStyle="bold"
             android:fontFamily="sans-serif-medium" />
 
-        <!-- Статус звонка -->
         <TextView
             android:id="@+id/call_status"
             android:layout_width="wrap_content"
@@ -64,7 +62,6 @@
             android:textColor="#4CAF50"
             android:textSize="16sp" />
 
-        <!-- Таймер звонка -->
         <TextView
             android:id="@+id/call_timer"
             android:layout_width="wrap_content"
@@ -150,7 +147,7 @@
             android:gravity="center">
 
             <ImageButton
-                android:id="@+id/btn_video"
+                android:id="@+id/btn_toggle_video"
                 android:layout_width="64dp"
                 android:layout_height="64dp"
                 android:src="@drawable/ic_video_call"
@@ -163,6 +160,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
+                android:id="@+id/btn_toggle_video_text"
                 android:text="Видео"
                 android:textColor="#FFFFFF"
                 android:textSize="12sp" />
@@ -201,7 +199,9 @@
         android:id="@+id/video_preview_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:visibility="gone">
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true">
 
         <!-- Видео собеседника (на весь экран) -->
         <org.webrtc.SurfaceViewRenderer
@@ -210,7 +210,35 @@
             android:layout_height="match_parent"
             android:keepScreenOn="true" />
 
-        <!-- Своё видео (маленькое окно в углу) -->
+        <!-- Заставка при отключенной камере -->
+        <LinearLayout
+            android:id="@+id/video_placeholder"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="#2C2C3E"
+            android:visibility="gone">
+
+            <de.hdodenhof.circleimageview.CircleImageView
+                android:id="@+id/placeholder_avatar"
+                android:layout_width="100dp"
+                android:layout_height="100dp"
+                android:src="@drawable/ic_person"
+                app:civ_border_width="2dp"
+                app:civ_border_color="#FFFFFF" />
+
+            <TextView
+                android:id="@+id/placeholder_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Камера выключена"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp" />
+        </LinearLayout>
+
+        <!-- Своё видео (маленькое окно в углу) - Drag enabled -->
         <FrameLayout
             android:id="@+id/local_video_container"
             android:layout_width="120dp"
@@ -219,7 +247,9 @@
             android:layout_gravity="top|end"
             android:background="#000000"
             android:visibility="gone"
-            android:elevation="8dp">
+            android:elevation="8dp"
+            android:clickable="true"
+            android:focusable="true">
 
             <org.webrtc.SurfaceViewRenderer
                 android:id="@+id/local_video_view"
@@ -232,12 +262,22 @@
                 android:layout_height="match_parent"
                 android:background="@drawable/video_border" />
 
+            <!-- Индикатор перетаскивания -->
+            <ImageView
+                android:id="@+id/drag_handle"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="top|end"
+                android:src="@drawable/ic_drag_handle"
+                android:padding="4dp"
+                android:background="#80000000"
+                android:visibility="gone" />
+
         </FrameLayout>
 
-        <!-- Кнопки управления поверх видео - теперь вне FrameLayout -->
     </FrameLayout>
 
-    <!-- ✅ КНОПКИ УПРАВЛЕНИЯ ВИДЕО - ОТДЕЛЬНО от video_preview_container -->
+    <!-- Кнопки управления для видео режима -->
     <LinearLayout
         android:id="@+id/video_controls"
         android:layout_width="match_parent"
@@ -248,7 +288,8 @@
         android:orientation="horizontal"
         android:paddingHorizontal="20dp"
         android:visibility="gone"
-        android:elevation="10dp">
+        android:elevation="10dp"
+        android:animateLayoutChanges="true">
 
         <ImageButton
             android:id="@+id/btn_video_speaker"
@@ -268,6 +309,16 @@
             android:background="@drawable/circle_button_bg"
             android:padding="12dp"
             android:src="@drawable/ic_microphone"
+            app:tint="#FFFFFF" />
+
+        <ImageButton
+            android:id="@+id/btn_toggle_camera"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_margin="8dp"
+            android:background="@drawable/circle_button_bg"
+            android:padding="12dp"
+            android:src="@drawable/ic_video"
             app:tint="#FFFFFF" />
 
         <ImageButton
@@ -291,5 +342,14 @@
             app:tint="#FFFFFF" />
 
     </LinearLayout>
+
+    <!-- Индикатор загрузки -->
+    <ProgressBar
+        android:id="@+id/progress_bar"
+        style="?android:attr/progressBarStyleLarge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:visibility="gone" />
 
 </RelativeLayout>

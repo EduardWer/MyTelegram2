@@ -57,6 +57,8 @@ public class CallActivity extends AppCompatActivity {
     private ImageButton btnSpeaker;
     private ImageButton btnMute;
     private ImageButton btnVideo;
+
+    private ImageButton btnToggleVideo;
     private ImageButton btnEndCall;
     private FrameLayout videoPreviewContainer;
     private SurfaceViewRenderer remoteVideoView;
@@ -79,6 +81,11 @@ public class CallActivity extends AppCompatActivity {
     // Флаги для отслеживания инициализации
     private boolean isLocalVideoViewInitialized = false;
     private boolean isRemoteVideoViewInitialized = false;
+
+    private LinearLayout videoPlaceholder;
+    private CircleImageView placeholderAvatar;
+    private ImageButton btnToggleCamera;  // В видео-контролах
+    private TextView btnToggleVideoText;   // В аудио-контролах
 
     // Таймер
     private Handler timerHandler;
@@ -110,6 +117,8 @@ public class CallActivity extends AppCompatActivity {
         initWebRTC();
         setupClickListeners();
         updateUI();
+        loadPlaceholderAvatar();
+
 
         CallManager callManager = CallManager.getInstance(this);
         if (!isOutgoing) {
@@ -128,7 +137,11 @@ public class CallActivity extends AppCompatActivity {
         callTimerText = findViewById(R.id.call_timer);
         btnSpeaker = findViewById(R.id.btn_speaker);
         btnMute = findViewById(R.id.btn_mute);
-        btnVideo = findViewById(R.id.btn_video);
+        videoPlaceholder = findViewById(R.id.video_placeholder);
+        placeholderAvatar = findViewById(R.id.placeholder_avatar);
+        btnToggleCamera = findViewById(R.id.btn_toggle_camera);
+        btnToggleVideo = findViewById(R.id.btn_toggle_video);
+        btnToggleVideoText = findViewById(R.id.btn_toggle_video_text);
         videoControls = findViewById(R.id.video_controls);
         btnEndCall = findViewById(R.id.btn_end_call);
         videoPreviewContainer = findViewById(R.id.video_preview_container);
@@ -332,29 +345,58 @@ public class CallActivity extends AppCompatActivity {
                 });
             }
 
+
+
             @Override
             public void onRemoteVideoTrack(VideoTrack videoTrack) {
                 runOnUiThread(() -> {
-                    Log.d(TAG, "Remote video track received");
+                    Log.d(TAG, "🎥 REMOTE VIDEO TRACK RECEIVED");
 
-                    // ВАЖНО: инициализируем remote view перед прикреплением трека
-                    initVideoViewsIfNeeded();
+                    if (videoTrack == null) {
+                        // ✅ Собеседник выключил камеру - показываем заставку на весь экран
+                        showRemoteVideoPlaceholder();
+                        return;
+                    }
 
-                    if (isVideo && videoTrack != null && remoteVideoView != null && isRemoteVideoViewInitialized) {
+                    if (remoteVideoView == null) {
+                        Log.e(TAG, "remoteVideoView is null!");
+                        return;
+                    }
+
+                    if (!isRemoteVideoViewInitialized) {
+                        initRemoteVideoViewIfNeeded();
+                    }
+
+                    if (isRemoteVideoViewInitialized) {
                         videoTrack.addSink(remoteVideoView);
                         remoteVideoView.setVisibility(View.VISIBLE);
-                        videoPreviewContainer.setVisibility(View.VISIBLE);
 
-                        if (callerInfo != null) {
-                            callerInfo.setVisibility(View.GONE);
+                        // ✅ Скрываем заставку, показываем видео собеседника
+                        if (videoPlaceholder != null) {
+                            videoPlaceholder.setVisibility(View.GONE);
                         }
-                        Log.d(TAG, "✅ Remote video track attached to view");
-                    } else {
-                        Log.w(TAG, "Cannot attach remote video - videoTrack=" + (videoTrack != null)
-                                + ", isVideo=" + isVideo
-                                + ", viewInit=" + isRemoteVideoViewInitialized);
+
+                        Log.d(TAG, "✅ Remote video displayed");
                     }
                 });
+            }
+
+            // Добавьте этот метод
+            private void showRemoteVideoPlaceholder() {
+                if (remoteVideoView != null) {
+                    remoteVideoView.setVisibility(View.GONE);
+                }
+                if (videoPlaceholder != null) {
+                    videoPlaceholder.setVisibility(View.VISIBLE);
+                    // Аватар уже загружен через loadPlaceholderAvatar()
+                    // Но на всякий случай перезагружаем
+                    loadPlaceholderAvatar();
+
+                    TextView placeholderText = videoPlaceholder.findViewById(R.id.placeholder_text);
+                    if (placeholderText != null) {
+                        placeholderText.setText("Собеседник выключил камеру");
+                    }
+                }
             }
 
             @Override
@@ -456,56 +498,7 @@ public class CallActivity extends AppCompatActivity {
 
     // Обновите существующий onRemoteVideoTrack
 
-    public void onRemoteVideoTrack(VideoTrack videoTrack) {
-        runOnUiThread(() -> {
-            Log.d(TAG, "🎥 REMOTE VIDEO TRACK RECEIVED! Track: " + videoTrack.id());
 
-            if (videoTrack == null) {
-                Log.e(TAG, "Video track is null!");
-                return;
-            }
-
-            if (remoteVideoView == null) {
-                Log.e(TAG, "remoteVideoView is null!");
-                return;
-            }
-
-            // Инициализируем remoteVideoView если нужно
-            if (!isRemoteVideoViewInitialized) {
-                initRemoteVideoViewIfNeeded();
-            }
-
-            // Если не инициализировался с первого раза, ждем
-            if (!isRemoteVideoViewInitialized) {
-                Log.w(TAG, "Remote video view not initialized yet, retrying in 500ms");
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                    if (videoTrack != null && remoteVideoView != null) {
-                        initRemoteVideoViewIfNeeded();
-                        if (isRemoteVideoViewInitialized) {
-                            videoTrack.addSink(remoteVideoView);
-                            remoteVideoView.setVisibility(View.VISIBLE);
-                            Log.d(TAG, "✅ Remote video track attached after delay");
-                        }
-                    }
-                }, 500);
-                return;
-            }
-
-            // Прикрепляем видео трек
-            videoTrack.addSink(remoteVideoView);
-            remoteVideoView.setVisibility(View.VISIBLE);
-
-            if (videoPreviewContainer != null) {
-                videoPreviewContainer.setVisibility(View.VISIBLE);
-            }
-
-            if (callerInfo != null) {
-                callerInfo.setVisibility(View.GONE);
-            }
-
-            Log.d(TAG, "✅ Remote video track attached to view successfully");
-        });
-    }
 
 
 
@@ -666,20 +659,40 @@ public class CallActivity extends AppCompatActivity {
     }
 
     private void setupClickListeners() {
-        btnSpeaker.setOnClickListener(v -> toggleSpeaker());
-        btnMute.setOnClickListener(v -> toggleMute());
-        btnVideo.setOnClickListener(v -> toggleVideo());
-        btnEndCall.setOnClickListener(v -> endCall());
+        // Кнопки для аудио-контролов
+        if (btnSpeaker != null) {
+            btnSpeaker.setOnClickListener(v -> toggleSpeaker());
+        }
 
+        if (btnMute != null) {
+            btnMute.setOnClickListener(v -> toggleMute());
+        }
+
+        if (btnToggleVideo != null) {
+            btnToggleVideo.setOnClickListener(v -> toggleVideo());
+        }
+
+        if (btnEndCall != null) {
+            btnEndCall.setOnClickListener(v -> endCall());
+        }
+
+        // Кнопки для видео-контролов
         if (btnVideoSpeaker != null) {
             btnVideoSpeaker.setOnClickListener(v -> toggleSpeaker());
         }
+
         if (btnVideoMute != null) {
             btnVideoMute.setOnClickListener(v -> toggleMute());
         }
+
+        if (btnToggleCamera != null) {
+            btnToggleCamera.setOnClickListener(v -> toggleVideo());
+        }
+
         if (btnSwitchCamera != null) {
             btnSwitchCamera.setOnClickListener(v -> switchCamera());
         }
+
         if (btnVideoEndCall != null) {
             btnVideoEndCall.setOnClickListener(v -> endCall());
         }
@@ -709,27 +722,61 @@ public class CallActivity extends AppCompatActivity {
 
     private void toggleVideo() {
         if (!isVideo) {
-            // ✅ Это аудиозвонок - переключаемся на видеозвонок
-            Log.d(TAG, "Switching from audio to video call");
+            // Аудиозвонок - переключаемся на видео
             showSwitchToVideoDialog();
             return;
         }
 
-        // Существующий код для включения/выключения камеры
+        // Видеозвонок - включаем/выключаем свою камеру
         isVideoOn = !isVideoOn;
-        updateButtonAlpha(btnVideo, isVideoOn);
-        if (btnVideoMute != null) {
-            updateButtonAlpha(btnVideoMute, isVideoOn);
-        }
+
         if (webRtcClient != null) {
             webRtcClient.toggleVideo(isVideoOn);
         }
+
+        // ✅ Свое видео - ТОЛЬКО скрываем/показываем локальное окно
         if (localVideoContainer != null) {
             localVideoContainer.setVisibility(isVideoOn ? View.VISIBLE : View.GONE);
         }
-        updateVideoButtonsState();
-        String message = isVideoOn ? "Камера включена" : "Камера выключена";
+
+        // ✅ НЕ трогаем videoPlaceholder - он для собеседника!
+        // Заставка для себя НЕ нужна, вы и так видите свое маленькое видео
+
+        // Обновляем иконку кнопки
+        if (btnToggleCamera != null) {
+            if (isVideoOn) {
+                btnToggleCamera.setImageResource(R.drawable.ic_video);
+                btnToggleCamera.setAlpha(1.0f);
+            } else {
+                btnToggleCamera.setImageResource(R.drawable.ic_video_off);
+                btnToggleCamera.setAlpha(0.5f);
+            }
+        }
+
+        String message = isVideoOn ? "Камера включена" : "Камера выключена (вы видите себя, собеседник видит аватар)";
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
+
+
+    private void updateVideoButtonState() {
+        // Для аудио-контролов (кнопка переключения на видео)
+        if (btnToggleVideo != null) {
+            if (!isVideo) {
+                btnToggleVideo.setImageResource(R.drawable.ic_video_call);
+                btnToggleVideoText.setText("Видео");
+            }
+        }
+
+        // Для видео-контролов (кнопка вкл/выкл камеры)
+        if (btnToggleCamera != null) {
+            if (isVideoOn) {
+                btnToggleCamera.setImageResource(R.drawable.ic_video);
+                btnToggleCamera.setAlpha(1.0f);
+            } else {
+                btnToggleCamera.setImageResource(R.drawable.ic_video_off);
+                btnToggleCamera.setAlpha(0.5f);
+            }
+        }
     }
 
     private void showSwitchToVideoDialog() {
@@ -744,53 +791,83 @@ public class CallActivity extends AppCompatActivity {
     private void switchToVideoCall() {
         Log.d(TAG, "🔄 Switching to video call...");
 
-        // 1. Меняем тип звонка
         isVideo = true;
         isVideoOn = true;
 
-        // 2. Обновляем UI
-        updateUIForVideoCall();
+        // Включаем видео в WebRTC
+        if (webRtcClient != null) {
+            webRtcClient.toggleVideo(true);
+        }
 
-        Toast.makeText(this, "Видеорежим включен", Toast.LENGTH_SHORT).show();
-    }
-
-
-
-
-
-
-    private void updateUIForVideoCall() {
-        // Показываем видео-контейнеры
+        // Обновляем UI
         if (videoPreviewContainer != null) {
             videoPreviewContainer.setVisibility(View.VISIBLE);
         }
         if (localVideoContainer != null) {
             localVideoContainer.setVisibility(View.VISIBLE);
         }
-
-        // Переключаем контролы
-        if (videoControls != null) {
-            videoControls.setVisibility(View.VISIBLE);
+        if (videoPlaceholder != null) {
+            videoPlaceholder.setVisibility(View.GONE);
         }
         if (callControls != null) {
             callControls.setVisibility(View.GONE);
         }
+        if (videoControls != null) {
+            videoControls.setVisibility(View.VISIBLE);
+        }
         if (callerInfo != null) {
             callerInfo.setVisibility(View.GONE);
         }
-
-        // Показываем кнопку переключения камеры
         if (btnSwitchCamera != null) {
             btnSwitchCamera.setVisibility(View.VISIBLE);
         }
 
-        // Скрываем кнопку "Видео" в аудио-контролах
-        if (btnVideo != null) {
-            btnVideo.setVisibility(View.GONE);
+        updateVideoButtonState();
+        Toast.makeText(this, "Видеорежим включен", Toast.LENGTH_SHORT).show();
+    }
+
+
+
+
+    private void loadPlaceholderAvatar() {
+        if (callerId == null || callerId.isEmpty()) {
+            if (placeholderAvatar != null) {
+                placeholderAvatar.setImageResource(R.drawable.ic_person);
+            }
+            return;
         }
 
-        updateVideoButtonsState();
+        FirebaseDatabase.getInstance().getReference("users")
+                .child(callerId)
+                .child("avatarUrl")
+                .get()
+                .addOnSuccessListener(dataSnapshot -> {
+                    if (dataSnapshot.exists() && placeholderAvatar != null) {
+                        String avatarUrl = dataSnapshot.getValue(String.class);
+                        if (avatarUrl != null && !avatarUrl.isEmpty()) {
+                            Glide.with(CallActivity.this)
+                                    .load(avatarUrl)
+                                    .placeholder(R.drawable.ic_person)
+                                    .error(R.drawable.ic_person)
+                                    .circleCrop()
+                                    .into(placeholderAvatar);
+                        } else {
+                            placeholderAvatar.setImageResource(R.drawable.ic_person);
+                        }
+                    } else if (placeholderAvatar != null) {
+                        placeholderAvatar.setImageResource(R.drawable.ic_person);
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    if (placeholderAvatar != null) {
+                        placeholderAvatar.setImageResource(R.drawable.ic_person);
+                    }
+                });
     }
+
+
+
+
 
     private void switchCamera() {
         if (webRtcClient != null) {
