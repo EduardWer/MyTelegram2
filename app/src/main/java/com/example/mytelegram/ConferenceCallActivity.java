@@ -53,6 +53,12 @@ public class ConferenceCallActivity extends AppCompatActivity {
 
     private VideoCapturer videoCapturer;
     private VideoSource videoSource;
+
+    // Добавьте константы в начало класса:
+    private static final String STUN_SERVER = "stun:stun.l.google.com:19302";
+    private static final String TURN_SERVER = "turn:192.168.31.163:3478";
+    private static final String TURN_USER = "myuser";
+    private static final String TURN_PASS = "mypassword";
     private AudioSource audioSource;
     private MediaStream localStream;
     private boolean isAudioEnabled = true;
@@ -154,6 +160,9 @@ public class ConferenceCallActivity extends AppCompatActivity {
             showToast("Ошибка инициализации: " + e.getMessage());
         }
     }
+
+
+
     private void createLocalStream() {
         try {
             localStream = peerConnectionFactory.createLocalMediaStream("stream_" + userId);
@@ -353,23 +362,17 @@ public class ConferenceCallActivity extends AppCompatActivity {
 
             PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(new ArrayList<>());
 
-            // STUN сервер Google (запасной)
             config.iceServers.add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer());
-
-            // Ваш TURN сервер (основной)
             config.iceServers.add(PeerConnection.IceServer.builder("turn:192.168.31.163:3478")
                     .setUsername("myuser")
                     .setPassword("mypassword")
                     .createIceServer());
 
-            // Настройки ICE
             config.iceTransportsType = PeerConnection.IceTransportsType.ALL;
             config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
             config.continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY;
             config.bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE;
             config.rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE;
-
-            // Таймауты
             config.iceConnectionReceivingTimeout = 30000;
 
             PeerConnection pc = peerConnectionFactory.createPeerConnection(config, new ConfPeerObserver(participantId));
@@ -379,10 +382,14 @@ public class ConferenceCallActivity extends AppCompatActivity {
                     pc.addTrack(track, Arrays.asList("stream_" + userId));
                     Log.d(TAG, "Added audio track: " + track.id());
                 }
+//                for (VideoTrack track : localStream.videoTracks) {
+//                    pc.addTrack(track, Arrays.asList("stream_" + userId));
+//                    Log.d(TAG, "Added video track: " + track.id());
+//                }
             }
-            //
+
             peerConnections.put(participantId, pc);
-            Log.d(TAG, "PeerConnection created with TURN for: " + participantId);
+            Log.d(TAG, "PeerConnection created for: " + participantId);
         } catch (Exception e) {
             Log.e(TAG, "Error creating PeerConnection", e);
         }
@@ -393,7 +400,7 @@ public class ConferenceCallActivity extends AppCompatActivity {
         if (pc != null) {
             MediaConstraints constraints = new MediaConstraints();
             constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
-            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false")); // видео отключено
+            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false")); // видео ВКЛЮЧЕНО
             pc.createOffer(new SdpCallback(participantId, "offer"), constraints);
         }
     }
@@ -403,7 +410,7 @@ public class ConferenceCallActivity extends AppCompatActivity {
         if (pc != null) {
             MediaConstraints constraints = new MediaConstraints();
             constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
-            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false")); // видео отключено
+            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false")); // видео ВКЛЮЧЕНО
             pc.createAnswer(new SdpCallback(participantId, "answer"), constraints);
         }
     }
@@ -522,7 +529,7 @@ public class ConferenceCallActivity extends AppCompatActivity {
 
         @Override
         public void onCreateSuccess(SessionDescription sdp) {
-            Log.d(TAG, "SDP created: " + sdp.description.substring(0, Math.min(500, sdp.description.length())));
+            Log.d(TAG, "SDP created, type: " + sdp.type);
 
             PeerConnection pc = peerConnections.get(participantId);
             if (pc != null) {
@@ -534,6 +541,11 @@ public class ConferenceCallActivity extends AppCompatActivity {
                             if ("offer".equals(type)) signalingClient.sendOffer(participantId, sdp.description);
                             else signalingClient.sendAnswer(participantId, sdp.description);
                         }
+                    }
+
+                    @Override
+                    public void onSetFailure(String error) {
+                        Log.e(TAG, "Failed: " + error);
                     }
                 }, sdp);
             }
@@ -563,9 +575,9 @@ public class ConferenceCallActivity extends AppCompatActivity {
             if (receiver.track() instanceof AudioTrack) {
                 AudioTrack audioTrack = (AudioTrack) receiver.track();
                 audioTrack.setEnabled(true);
-                Log.d(TAG, "Received audio track from " + participantId + ", enabled: " + audioTrack.enabled());
+                Log.d(TAG, "Received audio track from " + participantId);
 
-                // ПРИНУДИТЕЛЬНО включаем громкий динамик при получении аудио
+                // Включаем громкий динамик
                 mainHandler.post(() -> {
                     AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
                     if (am != null) {
@@ -573,11 +585,30 @@ public class ConferenceCallActivity extends AppCompatActivity {
                         am.setSpeakerphoneOn(true);
                         int max = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
                         am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, max, 0);
-                        Log.d(TAG, "*** SPEAKERPHONE ON, VOLUME: " + max + " ***");
+                        Log.d(TAG, "Speakerphone ON, volume: " + max);
                     }
                 });
             }
-            // ...
+
+            if (receiver.track() instanceof VideoTrack) {
+                VideoTrack videoTrack = (VideoTrack) receiver.track();
+                videoTrack.setEnabled(true);
+                Log.d(TAG, "Received video track from " + participantId);
+                mainHandler.post(() -> {
+                    SurfaceViewRenderer videoView = new SurfaceViewRenderer(ConferenceCallActivity.this);
+                    videoView.init(eglBase.getEglBaseContext(), null);
+                    videoView.setZOrderMediaOverlay(true);
+                    remoteVideoViews.put(participantId, videoView);
+                    videoTrack.addSink(videoView);
+
+                    FrameLayout container = findViewById(R.id.video_container);
+                    if (container != null) {
+                        container.addView(videoView, new FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.MATCH_PARENT,
+                                FrameLayout.LayoutParams.MATCH_PARENT));
+                    }
+                });
+            }
         }
 
         @Override
