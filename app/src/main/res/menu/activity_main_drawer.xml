@@ -22,6 +22,11 @@
             android:icon="@drawable/ic_menu_gallery"
             android:title="Галерея" />
 
+
+        <item android:id="@+id/Conference"
+            android:icon="@drawable/ic_video_off"
+            android:title="Конференции"/>
+
         <item
             android:id="@+id/Saves"
             android:icon="@drawable/saves_item"

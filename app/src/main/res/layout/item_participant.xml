@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="150dp"
+    android:layout_height="200dp"
+    android:layout_margin="8dp">
+
+    <!-- Плейсхолдер для видео -->
+    <View
+        android:id="@+id/video_placeholder"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/placeholder_image" />
+
+    <!-- Имя пользователя -->
+    <TextView
+        android:id="@+id/tv_user_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#99000000"
+        android:padding="8dp"
+        android:text="Участник"
+        android:textColor="@android:color/white"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <!-- Индикаторы статуса -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="4dp"
+        android:orientation="horizontal">
+
+        <!-- Индикатор выключенного аудио -->
+        <TextView
+            android:id="@+id/tv_audio_status"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:text="🔇"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:visibility="gone" />
+
+        <!-- Индикатор выключенного видео -->
+        <TextView
+            android:id="@+id/tv_video_status"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:text="📷"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:layout_marginStart="4dp"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+</FrameLayout>

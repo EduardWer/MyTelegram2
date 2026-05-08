@@ -47,6 +47,9 @@ public class WebSocketSignalingClient {
     }
 
     public interface SignalingListener {
+
+
+
         void onConnected();
         void onDisconnected();
         void onMessage(String message);
@@ -152,6 +155,10 @@ public class WebSocketSignalingClient {
         }
     }
 
+
+
+
+
     private void processIncomingMessage(String message) {
         try {
             JSONObject json = new JSONObject(message);
@@ -164,6 +171,111 @@ public class WebSocketSignalingClient {
                         listener.onUserList(json.getJSONArray("users"));
                     }
                     break;
+                // Вставьте эти case в существующий switch в processIncomingMessage()
+
+                case "group-offer":
+                    String groupOfferSdp = json.getString("sdp");
+                    String groupOfferFromUserId = json.getString("fromUserId");
+                    String groupOfferCallId = json.optString("group_call_id", "");
+                    Log.d(TAG, "📞 Received group offer from " + groupOfferFromUserId);
+
+                    if (listener != null) {
+                        // Можно добавить новый метод в SignalingListener или использовать существующий
+                        listener.onOfferReceived(groupOfferFromUserId, groupOfferSdp);
+                    } else if (webRtcClient != null) {
+                        webRtcClient.onRemoteOffer(groupOfferFromUserId, groupOfferSdp);
+                    }
+                    break;
+
+                case "group-answer":
+                    String groupAnswerSdp = json.getString("sdp");
+                    String groupAnswerFromUserId = json.getString("fromUserId");
+                    String groupAnswerCallId = json.optString("group_call_id", "");
+                    Log.d(TAG, "📞 Received group answer from " + groupAnswerFromUserId);
+
+                    if (listener != null) {
+                        listener.onAnswerReceived(groupAnswerFromUserId, groupAnswerSdp);
+                    } else if (webRtcClient != null) {
+                        webRtcClient.onRemoteAnswer(groupAnswerFromUserId, groupAnswerSdp);
+                    }
+                    break;
+
+                case "group-ice-candidate":
+                    String groupCandidate = json.getString("candidate");
+                    int groupSdpMLineIndex = json.getInt("sdpMLineIndex");
+                    String groupSdpMid = json.getString("sdpMid");
+                    String groupIceFromUserId = json.getString("fromUserId");
+                    String groupIceCallId = json.optString("group_call_id", "");
+                    Log.d(TAG, "❄️ Received group ICE candidate from " + groupIceFromUserId);
+
+                    if (listener != null) {
+                        listener.onIceCandidateReceived(groupIceFromUserId, groupCandidate,
+                                groupSdpMLineIndex, groupSdpMid);
+                    } else if (webRtcClient != null) {
+                        webRtcClient.addRemoteIceCandidate(groupIceFromUserId, groupCandidate,
+                                groupSdpMLineIndex, groupSdpMid);
+                    }
+                    break;
+
+                case "group-call-invitation":
+                    String invitationGroupCallId = json.getString("groupCallId");
+                    String invitationFromUserId = json.getString("fromUserId");
+                    String invitationFromUserName = json.getString("fromUserName");
+                    String invitationRoomId = json.optString("roomId", "");
+                    boolean invitationIsVideo = json.optBoolean("isVideo", true);
+
+                    Log.d(TAG, "📞 Group call invitation from " + invitationFromUserName);
+
+                    if (listener != null) {
+                        listener.onIncomingCall(invitationGroupCallId, invitationFromUserId,
+                                invitationFromUserName, invitationIsVideo);
+                    }
+                    break;
+
+                case "user-joined-group-call":
+                    String joinedGroupCallId = json.getString("groupCallId");
+                    String joinedUserId = json.getString("userId");
+                    String joinedUserName = json.optString("userName", "Unknown");
+                    Log.d(TAG, "👤 User joined group call: " + joinedUserName);
+
+                    if (listener != null) {
+                        listener.onMessage(message);
+                    }
+                    break;
+
+                case "user-left-group-call":
+                    String leftGroupCallId = json.getString("groupCallId");
+                    String leftUserId = json.getString("userId");
+                    Log.d(TAG, "👤 User left group call: " + leftUserId);
+
+                    if (listener != null) {
+                        listener.onMessage(message);
+                    }
+                    break;
+
+                case "group-call-ended":
+                    String endedGroupCallId = json.getString("groupCallId");
+                    Log.d(TAG, "🔴 Group call ended: " + endedGroupCallId);
+
+                    if (listener != null) {
+                        listener.onMessage(message);
+                    }
+                    break;
+
+                case "group-media-status":
+                    String mediaGroupCallId = json.getString("groupCallId");
+                    String mediaUserId = json.getString("userId");
+                    boolean mediaVideoEnabled = json.optBoolean("videoEnabled", true);
+                    boolean mediaAudioEnabled = json.optBoolean("audioEnabled", true);
+                    Log.d(TAG, "📹 Media status from " + mediaUserId + ": video=" + mediaVideoEnabled + ", audio=" + mediaAudioEnabled);
+
+                    if (listener != null) {
+                        listener.onMessage(message);
+                    }
+                    break;
+
+
+
 
                 case "users-list":
                     Log.d(TAG, "📋 Received users list");
@@ -266,6 +378,82 @@ public class WebSocketSignalingClient {
         }
     }
 
+
+    // Для конференций
+    public void sendOfferToRoom(String roomCode, String targetUserId, String sdp) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "conference-offer");
+            message.put("roomCode", roomCode);
+            message.put("targetUserId", targetUserId);
+            message.put("sdp", sdp);
+            message.put("fromUserId", userId);
+            sendMessage(message.toString());
+            Log.d(TAG, "📤 Offer sent to " + targetUserId + " in room " + roomCode);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error sending offer: " + e.getMessage());
+        }
+    }
+
+    public void sendAnswerToRoom(String roomCode, String targetUserId, String sdp) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "conference-answer");
+            message.put("roomCode", roomCode);
+            message.put("targetUserId", targetUserId);
+            message.put("sdp", sdp);
+            message.put("fromUserId", userId);
+            sendMessage(message.toString());
+        } catch (JSONException e) {
+            Log.e(TAG, "Error sending answer: " + e.getMessage());
+        }
+    }
+
+    public void sendIceCandidateToRoom(String roomCode, String targetUserId, String candidate, int sdpMLineIndex, String sdpMid) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "conference-ice");
+            message.put("roomCode", roomCode);
+            message.put("targetUserId", targetUserId);
+            message.put("candidate", candidate);
+            message.put("sdpMLineIndex", sdpMLineIndex);
+            message.put("sdpMid", sdpMid);
+            message.put("fromUserId", userId);
+            sendMessage(message.toString());
+        } catch (JSONException e) {
+            Log.e(TAG, "Error sending ICE candidate: " + e.getMessage());
+        }
+    }
+
+
+
+    // Для конференций
+    public void joinConferenceRoom(String roomCode) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "join-conference");
+            message.put("roomCode", roomCode);
+            message.put("userId", userId);
+            message.put("userName", userName);
+            sendMessage(message.toString());
+            Log.d(TAG, "📤 Joined conference room: " + roomCode);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error joining conference: " + e.getMessage());
+        }
+    }
+
+    public void leaveConferenceRoom(String roomCode) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "leave-conference");
+            message.put("roomCode", roomCode);
+            message.put("userId", userId);
+            sendMessage(message.toString());
+        } catch (JSONException e) {
+            Log.e(TAG, "Error leaving conference: " + e.getMessage());
+        }
+    }
+
     private void startKeepAlive() {
         keepAliveHandler = new Handler(Looper.getMainLooper());
         keepAliveRunnable = new Runnable() {
@@ -315,6 +503,21 @@ public class WebSocketSignalingClient {
                 connect();
             }
         }, RECONNECT_DELAY_MS);
+    }
+
+
+
+    public void sendGroupOffer(String targetUserId, String sdp, String groupCallId) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "group-offer");
+            message.put("target_user_id", targetUserId);
+            message.put("sdp", sdp);
+            message.put("group_call_id", groupCallId);
+            sendMessage(message.toString());
+        } catch (JSONException e) {
+            Log.e(TAG, "Error sending group offer: " + e.getMessage());
+        }
     }
 
     public void sendMessage(String message) {
@@ -390,6 +593,169 @@ public class WebSocketSignalingClient {
             sendMessage(message.toString());
         } catch (JSONException e) {
             Log.e(TAG, "Error getting users: " + e.getMessage());
+        }
+    }
+
+
+    // ==================== ДОПОЛНЕНИЯ ДЛЯ ГРУППОВЫХ ЗВОНКОВ ====================
+
+    /**
+     * Отправить групповой answer
+     */
+    public void sendGroupAnswer(String targetUserId, String sdp, String groupCallId) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "group-answer");
+            message.put("targetUserId", targetUserId);
+            message.put("sdp", sdp);
+            message.put("group_call_id", groupCallId);
+            message.put("fromUserId", userId);
+            sendMessage(message.toString());
+            Log.d(TAG, "📤 Sent group answer to: " + targetUserId + ", groupCallId: " + groupCallId);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error sending group answer: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Отправить групповой ICE кандидат
+     */
+    public void sendGroupIceCandidate(String targetUserId, String candidate,
+                                      int sdpMLineIndex, String sdpMid, String groupCallId) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "group-ice-candidate");
+            message.put("targetUserId", targetUserId);
+            message.put("candidate", candidate);
+            message.put("sdpMLineIndex", sdpMLineIndex);
+            message.put("sdpMid", sdpMid);
+            message.put("group_call_id", groupCallId);
+            message.put("fromUserId", userId);
+            sendMessage(message.toString());
+            Log.d(TAG, "📤 Sent group ICE candidate to: " + targetUserId);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error sending group ICE candidate: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Пригласить пользователя в групповой звонок
+     */
+    public void sendGroupCallInvitation(String groupCallId, String targetUserId,
+                                        String roomId, boolean isVideo) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "group-call-invitation");
+            message.put("groupCallId", groupCallId);
+            message.put("targetUserId", targetUserId);
+            message.put("roomId", roomId);
+            message.put("isVideo", isVideo);
+            message.put("fromUserId", userId);
+            message.put("fromUserName", userName);
+            sendMessage(message.toString());
+            Log.d(TAG, "📤 Sent group call invitation to: " + targetUserId);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error sending group call invitation: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Присоединиться к групповому звонку
+     */
+    public void joinGroupCall(String groupCallId) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "join-group-call");
+            message.put("groupCallId", groupCallId);
+            message.put("userId", userId);
+            message.put("userName", userName);
+            sendMessage(message.toString());
+            Log.d(TAG, "📤 Joining group call: " + groupCallId);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error joining group call: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Покинуть групповой звонок
+     */
+    public void leaveGroupCall(String groupCallId) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "leave-group-call");
+            message.put("groupCallId", groupCallId);
+            message.put("userId", userId);
+            sendMessage(message.toString());
+            Log.d(TAG, "📤 Leaving group call: " + groupCallId);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error leaving group call: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Завершить групповой звонок (для создателя)
+     */
+    public void endGroupCall(String groupCallId) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "end-group-call");
+            message.put("groupCallId", groupCallId);
+            message.put("userId", userId);
+            sendMessage(message.toString());
+            Log.d(TAG, "📤 Ending group call: " + groupCallId);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error ending group call: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Отправить статус медиа в групповом звонке (видео/аудио вкл/выкл)
+     */
+    public void sendGroupMediaStatus(String groupCallId, boolean videoEnabled, boolean audioEnabled) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "group-media-status");
+            message.put("groupCallId", groupCallId);
+            message.put("userId", userId);
+            message.put("videoEnabled", videoEnabled);
+            message.put("audioEnabled", audioEnabled);
+            sendMessage(message.toString());
+            Log.d(TAG, "📤 Media status update: video=" + videoEnabled + ", audio=" + audioEnabled);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error sending media status: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Получить информацию о групповом звонке
+     */
+    public void getGroupCallInfo(String groupCallId) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "get-group-call-info");
+            message.put("groupCallId", groupCallId);
+            message.put("userId", userId);
+            sendMessage(message.toString());
+            Log.d(TAG, "📤 Requesting group call info: " + groupCallId);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error getting group call info: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Переподключиться к групповому звонку после разрыва соединения
+     */
+    public void rejoinGroupCall(String groupCallId) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "rejoin-group-call");
+            message.put("groupCallId", groupCallId);
+            message.put("userId", userId);
+            message.put("userName", userName);
+            sendMessage(message.toString());
+            Log.d(TAG, "📤 Rejoining group call: " + groupCallId);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error rejoining group call: " + e.getMessage());
         }
     }
 

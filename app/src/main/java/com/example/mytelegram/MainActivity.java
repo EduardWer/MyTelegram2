@@ -364,6 +364,13 @@ public class MainActivity extends AppCompatActivity {
                 openProfileActivity();
                 return true;
             }
+
+            if (id == R.id.Conference) {
+                openConferenceActivity();
+                return true;
+            }
+
+
             if (id == R.id.Saves) {
                 openSavedMessages();
                 return true;
@@ -378,6 +385,13 @@ public class MainActivity extends AppCompatActivity {
         if (currentUser != null) {
             intent.putExtra("user_data", currentUser);
         }
+        startActivity(intent);
+    }
+
+
+    private void openConferenceActivity() {
+        Intent intent = new Intent(MainActivity.this, ConferenceActivity.class);
+
         startActivity(intent);
     }
 

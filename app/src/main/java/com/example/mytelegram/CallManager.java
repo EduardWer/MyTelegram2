@@ -28,7 +28,7 @@ import java.util.concurrent.Executors;
 public class CallManager {
 
     private static final String TAG = "CallManager";
-    private static final String PUSH_SERVER_URL = "http://192.168.31.163:8000"; // Замените на ваш IP
+    private static final String PUSH_SERVER_URL = "http://192.168.31.163:3001"; // Замените на ваш IP
 
     private static CallManager instance;
 
@@ -147,56 +147,6 @@ public class CallManager {
                 });
     }
 
-    /**
-     * Инициализация CallManager (слушатели Firebase)
-     */
-
-
-    /**
-     * Слушаем входящие звонки
-     */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     public void answerCall(String callId) {
         Log.d(TAG, "✅ Ответ на звонок: " + callId);
 
@@ -227,9 +177,7 @@ public class CallManager {
                 });
     }
 
-    /**
-     * Отклонение звонка
-     */
+
     public void declineCall(String callId) {
         Log.d(TAG, "❌ Отклонение звонка: " + callId);
 
@@ -250,9 +198,7 @@ public class CallManager {
                 });
     }
 
-    /**
-     * Завершение звонка
-     */
+
     public void endCall(String callId) {
         Log.d(TAG, "🔴 Завершение звонка: " + callId);
 
@@ -280,24 +226,7 @@ public class CallManager {
                 });
     }
 
-    /**
-     * Отправка ICE кандидата
-     */
 
-
-    /**
-     * Отправка SDP Offer
-     */
-
-
-    /**
-     * Отправка SDP Answer
-     */
-
-
-    /**
-     * Отправка push-уведомления о звонке через сервер
-     */
     private void sendCallNotification(String targetUserId, String callId, String targetUserName, boolean isVideo) {
         executor.execute(() -> {
             try {

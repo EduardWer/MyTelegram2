@@ -1,47 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-
     <!-- Базовые разрешения для сети -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-
-
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <uses-permission android:name="android.permission.CAPTURE_AUDIO_OUTPUT"
+    <uses-permission
+        android:name="android.permission.CAPTURE_AUDIO_OUTPUT"
         tools:ignore="ProtectedPermissions" />
-
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-
-    <!-- Разрешения для уведомлений -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" /> <!-- Разрешения для уведомлений -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-
-    <!-- Разрешения для работы с файлами -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" /> <!-- Разрешения для работы с файлами -->
     <!-- Для Android 10-12 (API 29-32) -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
-
-    <!-- Для Android 9 и ниже (API 28-) -->
+        android:maxSdkVersion="32" /> <!-- Для Android 9 и ниже (API 28-) -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
-
-    <!-- Для Android 11+ (API 30+) - ДОБАВЛЕНО -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-
-    <!-- Для доступа к медиафайлам на Android 10+ -->
-    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
-
-    <!-- Разрешение для камеры -->
-    <uses-permission android:name="android.permission.CAMERA" />
-
-    <!-- Фичи для камеры (не обязательные) -->
+        android:maxSdkVersion="28" /> <!-- Для Android 11+ (API 30+) - ДОБАВЛЕНО -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" /> <!-- Для доступа к медиафайлам на Android 10+ -->
+    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" /> <!-- Разрешение для камеры -->
+    <uses-permission android:name="android.permission.CAMERA" /> <!-- Фичи для камеры (не обязательные) -->
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
@@ -53,26 +36,33 @@
         android:required="false" />
 
     <application
-        android:requestLegacyExternalStorage="true"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="false"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@drawable/item_icon_set"
         android:label="@string/app_name"
+        android:requestLegacyExternalStorage="true"
         android:roundIcon="@drawable/message_background_received"
         android:supportsRtl="true"
         android:theme="@style/Theme.MyTelegram"
         android:usesCleartextTraffic="true"
-        tools:targetApi="31"
-        android:enableOnBackInvokedCallback="false">
+        tools:targetApi="31">
+        <activity
+            android:name=".ConferenceCallActivity"
+            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
+            android:exported="false" />
+        <activity
+            android:name=".ConferenceActivity"
+            android:exported="false" />
 
         <activity
             android:name=".IncomingCallActivity"
             android:exported="false"
-            android:showWhenLocked="true"
-            android:turnScreenOn="true"
             android:launchMode="singleTop"
-            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar" />
+            android:showWhenLocked="true"
+            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
+            android:turnScreenOn="true" />
 
         <service
             android:name=".MyFirebaseMessagingService"
@@ -80,121 +70,95 @@
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
-        </service>
-
-        <!-- Приёмник действий из уведомления -->
+        </service> <!-- Приёмник действий из уведомления -->
         <receiver
             android:name=".CallActionReceiver"
-
-            android:theme="@style/Theme.MyTelegram.NoActionBar"
-            android:exported="false" />
-
-        <!-- Экран звонка -->
+            android:exported="false"
+            android:theme="@style/Theme.MyTelegram.NoActionBar" /> <!-- Экран звонка -->
         <activity
             android:name=".CallActivity"
             android:launchMode="singleTop"
             android:showWhenLocked="true"
-
             android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
             android:turnScreenOn="true" />
-
         <activity
             android:name=".GroupInfoActivity"
             android:exported="false"
             android:theme="@style/Theme.MyTelegram.NoActionBar"
             android:windowSoftInputMode="adjustPan|stateHidden" />
-
         <activity
             android:name=".CreateGroupActivity"
-
-            android:theme="@style/Theme.MyTelegram.NoActionBar"
-            android:exported="false" />
-
+            android:exported="false"
+            android:theme="@style/Theme.MyTelegram.NoActionBar" />
         <activity
             android:name=".GroupChatActivity"
-            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|keyboardHidden"
-            android:theme="@style/Theme.MyTelegram.NoActionBar"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.MyTelegram.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
+
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-
         <activity
             android:name=".VideoPlayerActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"
-
-            android:theme="@style/Theme.MyTelegram.NoActionBar"
             android:screenOrientation="fullSensor"
+            android:theme="@style/Theme.MyTelegram.NoActionBar"
             tools:ignore="DiscouragedApi" />
-
         <activity
             android:name=".FullImageActivity"
             android:exported="false"
-
-            android:theme="@style/Theme.MyTelegram.NoActionBar"/>
-
+            android:theme="@style/Theme.MyTelegram.NoActionBar" />
         <activity
             android:name=".ImageViewActivity"
             android:exported="false"
-
-            android:theme="@style/Theme.MyTelegram.NoActionBar"/>
-
+            android:theme="@style/Theme.MyTelegram.NoActionBar" />
         <activity
             android:name=".UserProfileActivity"
             android:exported="false"
             android:theme="@style/Theme.MyTelegram.NoActionBar"
             android:windowSoftInputMode="adjustPan|stateHidden" />
-
         <activity
             android:name=".LoginActivity"
             android:exported="true"
             android:theme="@style/Theme.MyTelegram">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.MyTelegram.NoActionBar" />
-
         <activity
             android:name=".RegisterActivity"
             android:exported="false"
             android:theme="@style/Theme.MyTelegram" />
-
         <activity
             android:name=".ForgotPasswordActivity"
             android:exported="false"
-            android:theme="@style/Theme.MyTelegram" />
-
-        <!-- Chat Activities -->
+            android:theme="@style/Theme.MyTelegram" /> <!-- Chat Activities -->
         <activity
             android:name=".ChatActivity"
             android:launchMode="singleTop"
             android:theme="@style/Theme.MyTelegram.NoActionBar"
             android:windowSoftInputMode="adjustPan|stateHidden" />
-
         <activity
             android:name=".ChouseContactActivity"
             android:exported="false"
             android:theme="@style/Theme.MyTelegram.NoActionBar"
-            android:windowSoftInputMode="adjustPan|stateHidden" />
-
-        <!-- Profile Activity -->
+            android:windowSoftInputMode="adjustPan|stateHidden" /> <!-- Profile Activity -->
         <activity
             android:name=".ProfileActivity"
             android:exported="false"
             android:theme="@style/Theme.MyTelegram.NoActionBar"
-            android:windowSoftInputMode="adjustPan|stateHidden" />
-
-        <!-- FileProvider для камеры и обмена файлами -->
+            android:windowSoftInputMode="adjustPan|stateHidden" /> <!-- FileProvider для камеры и обмена файлами -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -205,4 +169,5 @@
                 android:resource="@xml/file_paths" />
         </provider>
     </application>
+
 </manifest>

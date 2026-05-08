@@ -1,4 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <item name="placeholder_text" type="id" />
+    <item name="header" type="id" />
+    <item name="tv_conference_title" type="id" />
+    <item name="video_loading" type="id" />
+    <item name="iv_audio_indicator" type="id" />
+    <item name="tv_name" type="id" />
+    <item name="video_view" type="id" />
+    <item name="placeholder" type="id" />
+    <item name="avatar" type="id" />
+    <item name="status" type="id" />
 </resources>

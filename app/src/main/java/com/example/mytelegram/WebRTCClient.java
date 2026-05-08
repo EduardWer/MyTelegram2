@@ -31,6 +31,8 @@ import org.webrtc.VideoTrack;
 import org.webrtc.audio.AudioDeviceModule;
 import org.webrtc.audio.JavaAudioDeviceModule;
 
+import java.nio.channels.Channel;
+import java.security.PublicKey;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -71,6 +73,8 @@ public class WebRTCClient {
                 .setPassword("mypassword")
                 .createIceServer());
     }
+
+    private WebRTCClient webRtcClient;
 
     public interface WebRTCCallback {
         void onLocalStreamReady(VideoTrack videoTrack, AudioTrack audioTrack);
@@ -378,7 +382,7 @@ public class WebRTCClient {
     }
 
 
-
+    
 
 
 
@@ -774,4 +778,32 @@ public class WebRTCClient {
 
         Log.d(TAG, "WebRTCClient disposed");
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 }

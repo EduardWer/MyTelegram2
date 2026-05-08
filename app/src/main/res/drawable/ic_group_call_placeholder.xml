@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="200dp"
+    android:viewportWidth="200"
+    android:viewportHeight="200">
+
+    <!-- Фон -->
+    <path
+        android:fillColor="#F5F5F5"
+        android:pathData="M100,100m-100,0a100,100 0,1 1,200 0a100,100 0,1 1,-200 0" />
+
+    <!-- Градиентный круг -->
+    <path
+        android:fillColor="#E3F2FD"
+        android:pathData="M100,95m-75,0a75,75 0,1 1,150 0a75,75 0,1 1,-150 0" />
+
+    <!-- Люди (упрощенные иконки) -->
+
+    <!-- Верхний левый -->
+    <path
+        android:fillColor="#2196F3"
+        android:pathData="M70,70m-18,0a18,18 0,1 1,36 0a18,18 0,1 1,-36 0" />
+    <path
+        android:fillColor="#2196F3"
+        android:pathData="M42,105a25,30 0,0 1,56 0" />
+
+    <!-- Верхний правый -->
+    <path
+        android:fillColor="#1976D2"
+        android:pathData="M130,70m-18,0a18,18 0,1 1,36 0a18,18 0,1 1,-36 0" />
+    <path
+        android:fillColor="#1976D2"
+        android:pathData="M102,105a25,30 0,0 1,56 0" />
+
+    <!-- Нижний левый -->
+    <path
+        android:fillColor="#1565C0"
+        android:pathData="M70,130m-18,0a18,18 0,1 1,36 0a18,18 0,1 1,-36 0" />
+    <path
+        android:fillColor="#1565C0"
+        android:pathData="M42,160a25,30 0,0 1,56 0" />
+
+    <!-- Нижний правый -->
+    <path
+        android:fillColor="#0D47A1"
+        android:pathData="M130,130m-18,0a18,18 0,1 1,36 0a18,18 0,1 1,-36 0" />
+    <path
+        android:fillColor="#0D47A1"
+        android:pathData="M102,160a25,30 0,0 1,56 0" />
+
+    <!-- Иконка видео -->
+    <path
+        android:fillColor="#ffffff"
+        android:fillAlpha="0.9"
+        android:pathData="M85,50h30l30,-15v40l-30,-15h-30z" />
+
+    <!-- Иконка камеры -->
+    <path
+        android:fillColor="#1565C0"
+        android:pathData="M145,45h15l5,-8h10l5,8h15v25h-50z" />
+    <path
+        android:fillColor="#1565C0"
+        android:pathData="M155,57m-5,0a5,5 0,1 1,10 0a5,5 0,1 1,-10 0" />
+
+</vector>
