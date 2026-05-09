@@ -1,5 +1,8 @@
 package com.example.mytelegram;
 
+import static androidx.core.util.TypedValueCompat.dpToPx;
+
+import android.annotation.SuppressLint;
 import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.os.Bundle;
@@ -15,6 +18,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import org.webrtc.*;
@@ -31,6 +35,11 @@ public class ConferenceCallActivity extends AppCompatActivity {
     private String roomCode;
     private String userId;
     private String userName;
+
+    private RecyclerView rvParticipants;  // Сетка для всех участников
+    private ParticipantsAdapter participantsAdapter;
+    private VideoCapturer videoCapturer;
+    private VideoSource videoSource;
     private String serverUrl;
     private boolean isCreator;
 
@@ -42,18 +51,18 @@ public class ConferenceCallActivity extends AppCompatActivity {
     private Map<String, SurfaceViewRenderer> remoteVideoViews = new HashMap<>();
 
     private FrameLayout localVideoContainer;
-    private RecyclerView rvParticipants;
+
     private SurfaceViewRenderer localVideoView;
     private ImageButton btnToggleAudio, btnToggleVideo, btnSwitchCamera, btnEndCall, btnChat;
     private EditText etMessage;
-    private Button btnSend;
+    private ImageButton btnSend;
     private LinearLayout chatContainer;
     private RecyclerView rvChat;
     private TextView tvRoomCode;
     private TextView tvStatus;
 
-    private VideoCapturer videoCapturer;
-    private VideoSource videoSource;
+
+
 
     // Добавьте константы в начало класса:
     private static final String STUN_SERVER = "stun:stun.l.google.com:19302";
@@ -66,12 +75,16 @@ public class ConferenceCallActivity extends AppCompatActivity {
     private boolean isVideoEnabled = true;
     private boolean isFrontCamera = true;
 
-    private ParticipantsAdapter participantsAdapter;
+
+    private FrameLayout videoContainer;  // Контейнер для видео
+
+
     private ChatAdapter chatAdapter;
     private List<Participant> participants = new ArrayList<>();
     private List<ChatMessage> chatMessages = new ArrayList<>();
     private boolean isActivityDestroyed = false;
     private Handler mainHandler;
+    private View tvParticipantsCount;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -105,17 +118,27 @@ public class ConferenceCallActivity extends AppCompatActivity {
         serverUrl = getIntent().getStringExtra("server_url");
         isCreator = getIntent().getBooleanExtra("is_creator", false);
 
-        Log.d(TAG, "onCreate: room=" + roomCode + " user=" + userName);
 
+
+        Log.d(TAG, "onCreate: room=" + roomCode + " user=" + userName);
         initViews();
+
         initWebRTC();
         connectToServer();
     }
 
+    @SuppressLint("SetTextI18n")
     private void initViews() {
-        localVideoContainer = findViewById(R.id.local_video_container);
-        rvParticipants = findViewById(R.id.rv_participants);
-        localVideoView = findViewById(R.id.local_video_view);
+        // Находим RecyclerView для списка участников
+        rvParticipants = findViewById(R.id.rv_video_grid);
+
+        // Настройка сетки (2 колонки для телефона, 3 для планшета)
+        int spanCount = getResources().getConfiguration().smallestScreenWidthDp >= 600 ? 2 : 1;
+        rvParticipants.setLayoutManager(new GridLayoutManager(this, spanCount));
+        participantsAdapter = new ParticipantsAdapter(participants);
+        rvParticipants.setAdapter(participantsAdapter);
+
+        // Находим остальные кнопки
         btnToggleAudio = findViewById(R.id.btn_toggle_audio);
         btnToggleVideo = findViewById(R.id.btn_toggle_video);
         btnSwitchCamera = findViewById(R.id.btn_switch_camera);
@@ -127,15 +150,11 @@ public class ConferenceCallActivity extends AppCompatActivity {
         chatContainer = findViewById(R.id.chat_container);
         rvChat = findViewById(R.id.rv_chat);
         tvRoomCode = findViewById(R.id.tv_room_code);
+        tvParticipantsCount = findViewById(R.id.tv_participants_count);
+
+
 
         tvRoomCode.setText("Комната: " + roomCode);
-        if (tvStatus != null) {
-            tvStatus.setText("Подключение...");
-        }
-
-        participantsAdapter = new ParticipantsAdapter(participants);
-        rvParticipants.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false));
-        rvParticipants.setAdapter(participantsAdapter);
 
         chatAdapter = new ChatAdapter(chatMessages, userId);
         rvChat.setLayoutManager(new LinearLayoutManager(this));
@@ -157,16 +176,12 @@ public class ConferenceCallActivity extends AppCompatActivity {
                     .createInitializationOptions();
             PeerConnectionFactory.initialize(initOptions);
 
-            // ВАЖНО: Добавляем видео кодеки
             DefaultVideoEncoderFactory encoderFactory = new DefaultVideoEncoderFactory(
-                    eglBase != null ? eglBase.getEglBaseContext() : null,
-                    true,  // enableIntelVp8Encoder
-                    true   // enableH264HighProfile
+                    null,  // eglBase еще нет, передаем null
+                    true, true
             );
 
-            DefaultVideoDecoderFactory decoderFactory = new DefaultVideoDecoderFactory(
-                    eglBase != null ? eglBase.getEglBaseContext() : null
-            );
+            DefaultVideoDecoderFactory decoderFactory = new DefaultVideoDecoderFactory(null);
 
             PeerConnectionFactory.Options options = new PeerConnectionFactory.Options();
             peerConnectionFactory = PeerConnectionFactory.builder()
@@ -175,11 +190,13 @@ public class ConferenceCallActivity extends AppCompatActivity {
                     .setVideoDecoderFactory(decoderFactory)
                     .createPeerConnectionFactory();
 
+            // ВАЖНО: СНАЧАЛА создаем eglBase
             eglBase = EglBase.create();
-            localVideoView.setMirror(true);
-            localVideoView.init(eglBase.getEglBaseContext(), null);
+            Log.d(TAG, "✅ EglBase created");
 
+            // ПОТОМ создаем локальный поток (здесь eglBase уже не null)
             createLocalStream();
+
         } catch (Exception e) {
             Log.e(TAG, "initWebRTC error", e);
             showToast("Ошибка инициализации: " + e.getMessage());
@@ -213,10 +230,30 @@ public class ConferenceCallActivity extends AppCompatActivity {
 
                 VideoTrack videoTrack = peerConnectionFactory.createVideoTrack("video_" + userId, videoSource);
                 localStream.addTrack(videoTrack);
-                videoTrack.addSink(localVideoView);
-                Log.d(TAG, "Video track added for local preview");
+
+                // СОЗДАЕМ РЕНДЕРЕР ДЛЯ СЕБЯ
+                SurfaceViewRenderer localRenderer = new SurfaceViewRenderer(this);
+                localRenderer.init(eglBase.getEglBaseContext(), null);
+                localRenderer.setMirror(true);
+                videoTrack.addSink(localRenderer);
+
+                // ДОБАВЛЯЕМ СЕБЯ В АДАПТЕР
+                Participant localParticipant = new Participant(userId, userName, true, true);
+                localParticipant.setIsLocal(true);
+                localParticipant.setVideoTrack(videoTrack);
+                localParticipant.setVideoRenderer(localRenderer);
+                participantsAdapter.addParticipant(localParticipant);
+
+
+
+
+                Log.d(TAG, "✅ Local video added to grid");
             } else {
-                Log.e(TAG, "Video capturer is null - camera unavailable");
+                Log.e(TAG, "❌ Video capturer is null");
+                // Добавляем себя без видео
+                Participant localParticipant = new Participant(userId, userName, true, false);
+                localParticipant.setIsLocal(true);
+                participantsAdapter.addParticipant(localParticipant);
             }
         } catch (Exception e) {
             Log.e(TAG, "createLocalStream error", e);
@@ -362,24 +399,13 @@ public class ConferenceCallActivity extends AppCompatActivity {
     }
 
     private void updateParticipantAudioStatus(String uid, boolean enabled) {
-        for (Participant p : participants) {
-            if (p.getUserId().equals(uid)) {
-                p.setAudioEnabled(enabled);
-                break;
-            }
-        }
-        if (participantsAdapter != null) participantsAdapter.notifyDataSetChanged();
+        participantsAdapter.updateAudioStatus(uid, enabled);
     }
 
     private void updateParticipantVideoStatus(String uid, boolean enabled) {
-        for (Participant p : participants) {
-            if (p.getUserId().equals(uid)) {
-                p.setVideoEnabled(enabled);
-                break;
-            }
-        }
-        if (participantsAdapter != null) participantsAdapter.notifyDataSetChanged();
+        participantsAdapter.updateVideoStatus(uid, enabled);
     }
+
 
     private void createPeerConnection(String participantId) {
         try {
@@ -461,6 +487,9 @@ public class ConferenceCallActivity extends AppCompatActivity {
             for (AudioTrack track : localStream.audioTracks) track.setEnabled(isAudioEnabled);
         }
         if (signalingClient != null) signalingClient.toggleAudio(isAudioEnabled);
+
+        // Обновляем статус в адаптере для себя
+        participantsAdapter.updateAudioStatus(userId, isAudioEnabled);
     }
 
     private void toggleVideo() {
@@ -469,6 +498,9 @@ public class ConferenceCallActivity extends AppCompatActivity {
             for (VideoTrack track : localStream.videoTracks) track.setEnabled(isVideoEnabled);
         }
         if (signalingClient != null) signalingClient.toggleVideo(isVideoEnabled);
+
+        // Обновляем статус в адаптере для себя
+        participantsAdapter.updateVideoStatus(userId, isVideoEnabled);
     }
 
     private void switchCamera() {
@@ -602,16 +634,9 @@ public class ConferenceCallActivity extends AppCompatActivity {
                 audioTrack.setEnabled(true);
                 Log.d(TAG, "Received audio track from " + participantId);
 
-                // Включаем громкий динамик
+                // Обновляем статус аудио в адаптере
                 mainHandler.post(() -> {
-                    AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-                    if (am != null) {
-                        am.setMode(AudioManager.MODE_IN_COMMUNICATION);
-                        am.setSpeakerphoneOn(true);
-                        int max = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL);
-                        am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, max, 0);
-                        Log.d(TAG, "Speakerphone ON, volume: " + max);
-                    }
+                    participantsAdapter.updateAudioStatus(participantId, true);
                 });
             }
 
@@ -619,21 +644,30 @@ public class ConferenceCallActivity extends AppCompatActivity {
                 VideoTrack videoTrack = (VideoTrack) receiver.track();
                 videoTrack.setEnabled(true);
                 Log.d(TAG, "Received video track from " + participantId);
-                mainHandler.post(() -> {
-                    SurfaceViewRenderer videoView = new SurfaceViewRenderer(ConferenceCallActivity.this);
-                    videoView.init(eglBase.getEglBaseContext(), null);
-                    videoView.setZOrderMediaOverlay(true);
-                    remoteVideoViews.put(participantId, videoView);
-                    videoTrack.addSink(videoView);
 
-                    FrameLayout container = findViewById(R.id.video_container);
-                    if (container != null) {
-                        container.addView(videoView, new FrameLayout.LayoutParams(
-                                FrameLayout.LayoutParams.MATCH_PARENT,
-                                FrameLayout.LayoutParams.MATCH_PARENT));
+                mainHandler.post(() -> {
+                    try {
+                        // Создаем рендерер для видео
+                        SurfaceViewRenderer videoView = new SurfaceViewRenderer(ConferenceCallActivity.this);
+                        videoView.init(eglBase.getEglBaseContext(), null);
+                        videoView.setMirror(false);
+                        videoTrack.addSink(videoView);
+
+                        // ДОБАВЛЯЕМ ИЛИ ОБНОВЛЯЕМ УЧАСТНИКА В АДАПТЕРЕ
+                        participantsAdapter.updateVideoTrack(participantId, videoTrack, videoView);
+                        participantsAdapter.updateVideoStatus(participantId, true);
+
+                        Log.d(TAG, "✅ Remote video added for: " + participantId);
+
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error adding video", e);
                     }
                 });
             }
+        }
+
+        private int dpToPx(int dp) {
+            return (int) (dp * getResources().getDisplayMetrics().density);
         }
 
         @Override
