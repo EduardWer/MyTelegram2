@@ -32,6 +32,9 @@ public class ConferenceCallActivity extends AppCompatActivity {
 
     private static final String TAG = "ConferenceCall";
 
+    private List<Participant> participants = new ArrayList<>();
+    private List<String> participantsIds = new ArrayList<>(); // Для отслеживания ID
+
     private String roomCode;
     private String userId;
     private String userName;
@@ -80,11 +83,11 @@ public class ConferenceCallActivity extends AppCompatActivity {
 
 
     private ChatAdapter chatAdapter;
-    private List<Participant> participants = new ArrayList<>();
+
     private List<ChatMessage> chatMessages = new ArrayList<>();
     private boolean isActivityDestroyed = false;
     private Handler mainHandler;
-    private View tvParticipantsCount;
+    private TextView tvParticipantsCount;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -286,30 +289,62 @@ public class ConferenceCallActivity extends AppCompatActivity {
             public void onRegistered(String uid, String uname) {}
 
             @Override
-            public void onRoomJoined(String code, boolean creator, List<String> participants) {
+            public void onRoomJoined(String code, boolean creator, List<String> participantsList) {
                 runOnUiThread(() -> {
-                    updateStatus("В комнате. Участников: " + participants.size());
-                    for (String participantId : participants) {
-                        addParticipant(participantId, "Участник", false, false);
-                        createPeerConnection(participantId);
-                        createOffer(participantId);
+                    int otherCount = participantsList != null ? participantsList.size() : 0;
+                    updateStatus("В комнате. Участников: " + (otherCount + 1));
+
+                    // Добавляем других участников (себя добавит createLocalStream)
+                    if (participantsList != null) {
+                        for (String participantId : participantsList) {
+                            if (!participantId.equals(userId)) {
+                                addParticipant(participantId, "Участник", true, false);
+                                createPeerConnection(participantId);
+                                createOffer(participantId);
+                            }
+                        }
                     }
+
+                    updateParticipantsCount();
                 });
+            }
+
+            private void updateParticipantsCount() {
+                if (tvParticipantsCount != null) {
+                    int count = participants.size();
+                    String text = count + " " + getCountEnding(count);
+                    tvParticipantsCount.setText(text);
+                }
+            }
+
+            private String getCountEnding(int count) {
+                if (count % 10 == 1 && count % 100 != 11) {
+                    return "участник";
+                } else if (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20)) {
+                    return "участника";
+                } else {
+                    return "участников";
+                }
             }
 
             @Override
             public void onUserJoined(String uid, String uname) {
                 runOnUiThread(() -> {
-                    addParticipant(uid, uname, false, false);
-                    showToast(uname + " присоединился");
+                    if (!uid.equals(userId)) {
+                        addParticipant(uid, uname, true, false);
+                        createPeerConnection(uid);
+                        showToast(uname + " присоединился");
+                    }
                 });
             }
 
+            // Обработчик выхода участника
             @Override
             public void onUserLeft(String uid, String uname) {
                 runOnUiThread(() -> {
                     removeParticipant(uid);
                     closePeerConnection(uid);
+                    showToast(uname + " покинул комнату");
                 });
             }
 
@@ -388,14 +423,63 @@ public class ConferenceCallActivity extends AppCompatActivity {
         Log.d(TAG, "Status: " + status);
     }
 
+
+
     private void addParticipant(String uid, String uname, boolean audio, boolean video) {
+        // Проверяем, не добавлен ли уже
+        for (Participant p : participants) {
+            if (p.getUserId().equals(uid)) {
+                Log.d(TAG, "Participant already exists: " + uid);
+                return;
+            }
+        }
+
         participants.add(new Participant(uid, uname, audio, video));
         if (participantsAdapter != null) participantsAdapter.notifyDataSetChanged();
+
+        updateParticipantsCount();  // ← ДОБАВЬТЕ ЭТУ СТРОКУ
+        Log.d(TAG, "➕ Participant added: " + uname + ", total: " + participants.size());
     }
 
     private void removeParticipant(String uid) {
+        String removedName = null;
+        for (Participant p : participants) {
+            if (p.getUserId().equals(uid)) {
+                removedName = p.getUserName();
+                break;
+            }
+        }
+
         participants.removeIf(p -> p.getUserId().equals(uid));
-        if (participantsAdapter != null) participantsAdapter.notifyDataSetChanged();
+
+        if (participantsAdapter != null) {
+            participantsAdapter.removeParticipant(uid);
+        }
+
+        updateParticipantsCount();
+        Log.d(TAG, "➖ Participant removed: " + removedName + ", total: " + participants.size());
+    }
+
+    private void updateParticipantsCount() {
+        if (tvParticipantsCount != null) {
+            int count = participants.size();
+            String text;
+
+            if (count == 0) {
+                text = "0 участников";
+            } else if (count == 1) {
+                text = "1 участник";
+            } else if (count >= 2 && count <= 4) {
+                text = count + " участника";
+            } else {
+                text = count + " участников";
+            }
+
+            tvParticipantsCount.setText(text);
+            Log.d(TAG, "📊 Participants count: " + text);
+        } else {
+            Log.e(TAG, "❌ tvParticipantsCount is null!");
+        }
     }
 
     private void updateParticipantAudioStatus(String uid, boolean enabled) {
@@ -494,13 +578,30 @@ public class ConferenceCallActivity extends AppCompatActivity {
 
     private void toggleVideo() {
         isVideoEnabled = !isVideoEnabled;
-        if (localStream != null) {
-            for (VideoTrack track : localStream.videoTracks) track.setEnabled(isVideoEnabled);
-        }
-        if (signalingClient != null) signalingClient.toggleVideo(isVideoEnabled);
 
-        // Обновляем статус в адаптере для себя
-        participantsAdapter.updateVideoStatus(userId, isVideoEnabled);
+        if (localStream != null) {
+            for (VideoTrack track : localStream.videoTracks) {
+                track.setEnabled(isVideoEnabled);
+            }
+        }
+
+        if (signalingClient != null) {
+            signalingClient.toggleVideo(isVideoEnabled);
+        }
+
+        // Обновляем иконку кнопки
+
+
+        // ОБНОВЛЯЕМ СТАТУС В АДАПТЕРЕ ДЛЯ СЕБЯ
+        if (participantsAdapter != null) {
+            participantsAdapter.updateVideoStatus(userId, isVideoEnabled);
+        }
+
+        // Показываем уведомление
+        String message = isVideoEnabled ? "Камера включена" : "Камера выключена";
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+
+        Log.d(TAG, "Video toggled: " + (isVideoEnabled ? "ON" : "OFF"));
     }
 
     private void switchCamera() {

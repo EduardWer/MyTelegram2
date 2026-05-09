@@ -89,7 +89,8 @@ public class ParticipantsAdapter extends RecyclerView.Adapter<ParticipantsAdapte
         for (int i = 0; i < participants.size(); i++) {
             if (participants.get(i).getUserId().equals(userId)) {
                 participants.get(i).setAudioEnabled(enabled);
-                notifyItemChanged(i);
+                // Только обновляем иконку, не пересоздаем видео
+                notifyItemChanged(i, "audio");
                 break;
             }
         }
@@ -99,7 +100,7 @@ public class ParticipantsAdapter extends RecyclerView.Adapter<ParticipantsAdapte
         for (int i = 0; i < participants.size(); i++) {
             if (participants.get(i).getUserId().equals(userId)) {
                 participants.get(i).setVideoEnabled(enabled);
-                notifyItemChanged(i);
+                notifyItemChanged(i, "video");
                 break;
             }
         }
@@ -109,8 +110,27 @@ public class ParticipantsAdapter extends RecyclerView.Adapter<ParticipantsAdapte
         for (int i = 0; i < participants.size(); i++) {
             if (participants.get(i).getUserId().equals(userId)) {
                 participants.get(i).setSpeaking(isSpeaking);
-                notifyItemChanged(i);
+                notifyItemChanged(i, "speaking");
                 break;
+            }
+        }
+    }
+
+    @Override
+    public void onBindViewHolder(@NonNull ViewHolder holder, int position, @NonNull List<Object> payloads) {
+        if (payloads.isEmpty()) {
+            super.onBindViewHolder(holder, position, payloads);
+        } else {
+            // Частичное обновление - только статусы, без пересоздания видео
+            Participant participant = participants.get(position);
+            for (Object payload : payloads) {
+                if (payload.equals("audio")) {
+                    holder.updateAudioIcon(participant.isAudioEnabled());
+                } else if (payload.equals("video")) {
+                    holder.updateVideoIcon(participant.isVideoEnabled());
+                } else if (payload.equals("speaking")) {
+                    holder.updateSpeakingIndicator(participant.isSpeaking());
+                }
             }
         }
     }
@@ -122,6 +142,8 @@ public class ParticipantsAdapter extends RecyclerView.Adapter<ParticipantsAdapte
         TextView tvUserName;
         ImageView ivVideoIcon, ivAudioIcon;
         View speakingIndicator;
+        private SurfaceViewRenderer currentRenderer;
+        private String currentUserId;
 
         ViewHolder(View itemView) {
             super(itemView);
@@ -135,59 +157,104 @@ public class ParticipantsAdapter extends RecyclerView.Adapter<ParticipantsAdapte
         }
 
         void bind(Participant participant) {
-            // Имя
+            currentUserId = participant.getUserId();
+
+            // Имя (обновляется всегда)
             String displayName = participant.isLocal() ? participant.getUserName() + " (Вы)" : participant.getUserName();
             tvUserName.setText(displayName);
 
-            // Индикатор говорящего
-            if (speakingIndicator != null) {
-                speakingIndicator.setVisibility(participant.isSpeaking() ? View.VISIBLE : View.GONE);
-            }
+            // Обновляем иконки статуса
+            updateSpeakingIndicator(participant.isSpeaking());
+            updateAudioIcon(participant.isAudioEnabled());
+            updateVideoIcon(participant.isVideoEnabled());
 
-            // Иконки статуса
-            if (ivVideoIcon != null) {
-                ivVideoIcon.setVisibility(View.VISIBLE);
-                ivVideoIcon.setImageResource(participant.isVideoEnabled() ? R.drawable.ic_videocam : R.drawable.ic_video_off);
-                ivVideoIcon.setAlpha(participant.isVideoEnabled() ? 1.0f : 0.5f);
-            }
+            // Видео или аватар (только если изменилось состояние видео)
+            boolean hasVideo = participant.getVideoTrack() != null && participant.isVideoEnabled() && participant.getVideoRenderer() != null;
+            boolean wasShowingVideo = currentRenderer != null && currentRenderer.getVisibility() == View.VISIBLE;
 
-            if (ivAudioIcon != null) {
-                ivAudioIcon.setVisibility(View.VISIBLE);
-                ivAudioIcon.setImageResource(participant.isAudioEnabled() ? R.drawable.ic_microphone : R.drawable.ic_mic_off);
-                ivAudioIcon.setAlpha(participant.isAudioEnabled() ? 1.0f : 0.5f);
-            }
-
-            // Видео или аватар
-            if (participant.getVideoTrack() != null && participant.isVideoEnabled() && participant.getVideoRenderer() != null) {
-                videoContainer.setVisibility(View.VISIBLE);
-                ivAvatar.setVisibility(View.GONE);
-                videoView.setVisibility(View.VISIBLE);
-
-                SurfaceViewRenderer renderer = participant.getVideoRenderer();
-
-                // Очищаем контейнер
-                if (videoContainer.getChildCount() > 0 && videoContainer.getChildAt(0) != videoView) {
-                    videoContainer.removeAllViews();
-                }
-
-                // Добавляем рендерер если нужно
-                if (renderer.getParent() != null) {
-                    ((ViewGroup) renderer.getParent()).removeView(renderer);
-                }
-
-                if (renderer.getParent() == null) {
-                    videoContainer.addView(renderer, 0);
-                }
-
-                // Подключаем видео
-                participant.getVideoTrack().addSink(renderer);
-
-            } else {
-                videoContainer.setVisibility(View.GONE);
-                ivAvatar.setVisibility(View.VISIBLE);
-                videoView.setVisibility(View.GONE);
+            if (hasVideo && !wasShowingVideo) {
+                // Включаем видео
+                showVideo(participant);
+            } else if (!hasVideo && wasShowingVideo) {
+                // Выключаем видео, показываем аватар
+                showAvatar(participant);
+            } else if (hasVideo && wasShowingVideo && participant.getVideoRenderer() != currentRenderer) {
+                // Меняем рендерер
+                showVideo(participant);
+            } else if (!hasVideo && !wasShowingVideo) {
+                // Обновляем аватар если нужно
                 loadAvatar(participant.getUserId());
             }
+        }
+
+        void updateSpeakingIndicator(boolean isSpeaking) {
+            if (speakingIndicator != null) {
+                speakingIndicator.setVisibility(isSpeaking ? View.VISIBLE : View.GONE);
+            }
+        }
+
+        void updateAudioIcon(boolean isAudioEnabled) {
+            if (ivAudioIcon != null) {
+                if (!isAudioEnabled) {
+                    ivAudioIcon.setVisibility(View.VISIBLE);
+                    ivAudioIcon.setImageResource(R.drawable.ic_mic_off);
+                } else {
+                    ivAudioIcon.setVisibility(View.GONE);
+                }
+            }
+        }
+
+        void updateVideoIcon(boolean isVideoEnabled) {
+            if (ivVideoIcon != null) {
+                if (!isVideoEnabled) {
+                    ivVideoIcon.setVisibility(View.VISIBLE);
+                    ivVideoIcon.setImageResource(R.drawable.ic_video_off);
+                } else {
+                    ivVideoIcon.setVisibility(View.GONE);
+                }
+            }
+        }
+
+        private void showVideo(Participant participant) {
+            if (participant.getVideoRenderer() == null) return;
+
+            videoContainer.setVisibility(View.VISIBLE);
+            ivAvatar.setVisibility(View.GONE);
+            videoView.setVisibility(View.GONE);
+
+            SurfaceViewRenderer renderer = participant.getVideoRenderer();
+            currentRenderer = renderer;
+
+            // Очищаем контейнер
+            if (videoContainer.getChildCount() > 0) {
+                videoContainer.removeAllViews();
+            }
+
+            // Добавляем рендерер
+            if (renderer.getParent() != null) {
+                ((ViewGroup) renderer.getParent()).removeView(renderer);
+            }
+
+            videoContainer.addView(renderer);
+
+            // Подключаем видео
+            if (participant.getVideoTrack() != null) {
+                participant.getVideoTrack().addSink(renderer);
+            }
+        }
+
+        private void showAvatar(Participant participant) {
+            videoContainer.setVisibility(View.VISIBLE);
+            ivAvatar.setVisibility(View.VISIBLE);
+            videoView.setVisibility(View.GONE);
+
+            // Отключаем видео от старого рендерера
+            if (currentRenderer != null && participant.getVideoTrack() != null) {
+                participant.getVideoTrack().removeSink(currentRenderer);
+            }
+            currentRenderer = null;
+
+            loadAvatar(participant.getUserId());
         }
 
         private void loadAvatar(String userId) {
@@ -206,7 +273,11 @@ public class ParticipantsAdapter extends RecyclerView.Adapter<ParticipantsAdapte
                                             .error(R.drawable.ic_person)
                                             .circleCrop()
                                             .into(ivAvatar);
+                                } else {
+                                    ivAvatar.setImageResource(R.drawable.ic_person);
                                 }
+                            } else if (ivAvatar != null) {
+                                ivAvatar.setImageResource(R.drawable.ic_person);
                             }
                         })
                         .addOnFailureListener(e -> {

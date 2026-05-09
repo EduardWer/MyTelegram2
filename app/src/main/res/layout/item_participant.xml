@@ -49,22 +49,31 @@
         android:maxLines="1"
         android:ellipsize="end" />
 
-    <!-- Иконка статуса видео -->
-    <ImageView
-        android:id="@+id/iv_video_icon"
-        android:layout_width="14dp"
-        android:layout_height="14dp"
-        android:layout_marginTop="2dp"
-        android:src="@drawable/ic_videocam"
-        android:visibility="gone" />
+    <!-- Контейнер для иконок статуса в ряд -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal"
+        android:gravity="center">
 
-    <!-- Иконка статуса аудио -->
-    <ImageView
-        android:id="@+id/iv_audio_icon"
-        android:layout_width="14dp"
-        android:layout_height="14dp"
-        android:layout_marginTop="2dp"
-        android:src="@drawable/ic_microphone"
-        android:visibility="gone" />
+        <!-- Иконка статуса видео -->
+        <ImageView
+            android:id="@+id/iv_video_icon"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:src="@drawable/ic_videocam"
+            android:visibility="gone" />
+
+        <!-- Иконка статуса аудио -->
+        <ImageView
+            android:id="@+id/iv_audio_icon"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:layout_marginStart="8dp"
+            android:src="@drawable/ic_microphone"
+            android:visibility="gone" />
+
+    </LinearLayout>
 
 </LinearLayout>
