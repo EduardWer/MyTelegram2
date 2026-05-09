@@ -1,5 +1,6 @@
 package com.example.mytelegram;
 
+import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Handler;
@@ -77,6 +78,16 @@ public class ConferenceCallActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_conference_call);
 
+        String[] permissions = {
+                android.Manifest.permission.CAMERA,
+                android.Manifest.permission.RECORD_AUDIO
+        };
+
+        if (checkSelfPermission(android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
+                checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(permissions, 100);
+        }
+
         AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         if (audioManager != null) {
             audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
@@ -142,12 +153,26 @@ public class ConferenceCallActivity extends AppCompatActivity {
         try {
             PeerConnectionFactory.InitializationOptions initOptions = PeerConnectionFactory
                     .InitializationOptions.builder(this)
+                    .setEnableInternalTracer(true)
                     .createInitializationOptions();
             PeerConnectionFactory.initialize(initOptions);
+
+            // ВАЖНО: Добавляем видео кодеки
+            DefaultVideoEncoderFactory encoderFactory = new DefaultVideoEncoderFactory(
+                    eglBase != null ? eglBase.getEglBaseContext() : null,
+                    true,  // enableIntelVp8Encoder
+                    true   // enableH264HighProfile
+            );
+
+            DefaultVideoDecoderFactory decoderFactory = new DefaultVideoDecoderFactory(
+                    eglBase != null ? eglBase.getEglBaseContext() : null
+            );
 
             PeerConnectionFactory.Options options = new PeerConnectionFactory.Options();
             peerConnectionFactory = PeerConnectionFactory.builder()
                     .setOptions(options)
+                    .setVideoEncoderFactory(encoderFactory)
+                    .setVideoDecoderFactory(decoderFactory)
                     .createPeerConnectionFactory();
 
             eglBase = EglBase.create();
@@ -382,10 +407,10 @@ public class ConferenceCallActivity extends AppCompatActivity {
                     pc.addTrack(track, Arrays.asList("stream_" + userId));
                     Log.d(TAG, "Added audio track: " + track.id());
                 }
-//                for (VideoTrack track : localStream.videoTracks) {
-//                    pc.addTrack(track, Arrays.asList("stream_" + userId));
-//                    Log.d(TAG, "Added video track: " + track.id());
-//                }
+                for (VideoTrack track : localStream.videoTracks) {
+                    pc.addTrack(track, Arrays.asList("stream_" + userId));
+                    Log.d(TAG, "Added video track: " + track.id());
+                }
             }
 
             peerConnections.put(participantId, pc);
@@ -400,7 +425,7 @@ public class ConferenceCallActivity extends AppCompatActivity {
         if (pc != null) {
             MediaConstraints constraints = new MediaConstraints();
             constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
-            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false")); // видео ВКЛЮЧЕНО
+            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true")); // видео ВКЛЮЧЕНО
             pc.createOffer(new SdpCallback(participantId, "offer"), constraints);
         }
     }
@@ -410,7 +435,7 @@ public class ConferenceCallActivity extends AppCompatActivity {
         if (pc != null) {
             MediaConstraints constraints = new MediaConstraints();
             constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
-            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false")); // видео ВКЛЮЧЕНО
+            constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true")); // видео ВКЛЮЧЕНО
             pc.createAnswer(new SdpCallback(participantId, "answer"), constraints);
         }
     }
