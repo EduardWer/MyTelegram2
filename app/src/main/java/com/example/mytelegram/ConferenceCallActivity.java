@@ -949,7 +949,7 @@ public class ConferenceCallActivity extends AppCompatActivity {
             Log.e(TAG, "Error creating push notification", e);
         }
     }
-
+//
     private void showLoading(boolean show) {
         runOnUiThread(() -> {
             if (progressBar != null) {
