@@ -35,11 +35,50 @@ public class ConferenceActivity extends AppCompatActivity {
 
         Log.d(TAG, "onCreate: Activity created");
 
+        // 1. Сначала инициализируем UI
         initViews();
+
+        // 2. Инициализируем пользователя
         initUser();
 
+        // 3. Настраиваем кнопки
         btnCreateRoom.setOnClickListener(v -> createRoom());
         btnJoinRoom.setOnClickListener(v -> joinRoom());
+
+        // 4. Обрабатываем приглашение (после инициализации всех View)
+        handleInvitationIntent();
+    }
+
+    private void handleInvitationIntent() {
+        String autoJoinRoom = getIntent().getStringExtra("auto_join_room");
+        String inviterName = getIntent().getStringExtra("inviter_name");
+
+        Log.d(TAG, "handleInvitationIntent: autoJoinRoom=" + autoJoinRoom + ", inviterName=" + inviterName);
+
+        if (autoJoinRoom != null && !autoJoinRoom.isEmpty()) {
+            // Убеждаемся, что etRoomCode не null
+            if (etRoomCode == null) {
+                Log.e(TAG, "etRoomCode is null, trying to find it again");
+                etRoomCode = findViewById(R.id.et_room_code);
+            }
+
+            if (etRoomCode != null) {
+                etRoomCode.setText(autoJoinRoom);
+                Log.d(TAG, "Room code set to: " + autoJoinRoom);
+            } else {
+                Log.e(TAG, "etRoomCode is still null! Check layout file");
+            }
+
+            if (inviterName != null && !inviterName.isEmpty()) {
+                Toast.makeText(this, "Приглашение от " + inviterName, Toast.LENGTH_LONG).show();
+            }
+
+            // Автоматически присоединяемся с задержкой
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                Log.d(TAG, "Auto joining room: " + autoJoinRoom);
+                joinRoom();
+            }, 500);
+        }
     }
 
     @Override

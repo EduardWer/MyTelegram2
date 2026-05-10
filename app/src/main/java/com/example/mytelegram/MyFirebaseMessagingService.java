@@ -1,5 +1,6 @@
 package com.example.mytelegram;
 
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
@@ -10,12 +11,13 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
+import android.media.RingtoneManager;
+import android.os.Build;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.TaskStackBuilder;
-import androidx.core.graphics.drawable.IconCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.google.firebase.auth.FirebaseAuth;
@@ -35,6 +37,9 @@ import java.util.Map;
 public class MyFirebaseMessagingService extends FirebaseMessagingService {
 
     private static final String TAG = "FCMService";
+    private static final String CHANNEL_CALLS = "calls";
+    private static final String CHANNEL_MESSAGES = "chat_messages";
+    private static final String CHANNEL_CONFERENCE = "conference_invites";
 
     @Override
     public void onMessageReceived(@NonNull RemoteMessage remoteMessage) {
@@ -47,9 +52,59 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
 
         if ("call".equals(type)) {
             handleCallNotification(data);
+        } else if ("conference_invite".equals(type)) {
+            handleConferenceInvite(data);
         } else {
             handleMessageNotification(data);
         }
+    }
+
+    // ==================== ПРИГЛАШЕНИЕ В КОНФЕРЕНЦИЮ ====================
+
+    private void handleConferenceInvite(Map<String, String> data) {
+        String roomCode = data.get("room_code");
+        String inviterName = data.get("inviterName");
+        String inviterId = data.get("inviterId");
+        String title = data.get("title");
+        String body = data.get("body");
+
+        Log.d(TAG, "📞 Приглашение в конференцию: room=" + roomCode + ", from=" + inviterName);
+
+        if (roomCode == null || roomCode.isEmpty()) return;
+
+        createNotificationChannels();
+        showConferenceInviteNotification(title, body, roomCode, inviterName, inviterId);
+    }
+
+    private void showConferenceInviteNotification(String title, String body,
+                                                  String roomCode, String inviterName, String inviterId) {
+        Intent intent = new Intent(this, ConferenceActivity.class);
+        intent.putExtra("auto_join_room", roomCode);
+        intent.putExtra("inviter_name", inviterName);
+        intent.putExtra("inviter_id", inviterId);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                this,
+                roomCode.hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_CONFERENCE)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title != null ? title : "Приглашение в конференцию")
+                .setContentText(body != null ? body : inviterName + " приглашает вас присоединиться")
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setVibrate(new long[]{0, 500, 200, 500})
+                .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
+                .setContentIntent(pendingIntent);
+
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        manager.notify(roomCode.hashCode(), builder.build());
+
+        Log.d(TAG, "✅ Уведомление о приглашении показано");
     }
 
     // ==================== ЗВОНКИ ====================
@@ -66,6 +121,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
 
         if (callId == null) return;
 
+        createNotificationChannels();
         NotificationManager notificationManager =
                 (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 
@@ -103,8 +159,6 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
         sendBroadcast(intent);
     }
 
-
-
     private void showMissedCall(NotificationManager manager,
                                 String callerName, String callId, boolean isVideo) {
         int notificationId = callId.hashCode() + 1;
@@ -117,8 +171,8 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, "calls")
-                .setSmallIcon(android.R.drawable.stat_notify_missed_call)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_CALLS)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(callerName)
                 .setContentText(callText)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -148,30 +202,23 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
 
         final String finalChatId = chatId;
 
-        // ПРОВЕРКА: Нужно ли показывать уведомление?
         if (isUserInThisChat(finalChatId)) {
-            // Пользователь в этом чате - не показываем уведомление
             Log.d(TAG, "Пользователь в чате " + finalChatId + ", уведомление НЕ показываем");
-
-            // Отправляем локальное уведомление для обновления UI
             notifyChatActivityNewMessage(title, body, finalChatId, senderId);
             return;
         }
 
-        // Пользователь не в этом чате - показываем уведомление
         Log.d(TAG, "Пользователь НЕ в чате, показываем уведомление");
+        createNotificationChannels();
         loadAvatarAndShowNotification(title, body, finalChatId, senderId);
     }
 
-    // Проверка, находится ли пользователь в этом чате
     private boolean isUserInThisChat(String chatId) {
-        // Используем статические методы ChatActivity
         return ChatActivity.isVisible() &&
                 ChatActivity.getCurrentChatId() != null &&
                 ChatActivity.getCurrentChatId().equals(chatId);
     }
 
-    // Отправляем локальный broadcast для обновления UI в ChatActivity
     private void notifyChatActivityNewMessage(String title, String body, String chatId, String senderId) {
         Intent intent = new Intent("NEW_MESSAGE_RECEIVED");
         intent.putExtra("chat_id", chatId);
@@ -208,7 +255,6 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
 
     private void showMessageNotification(String title, String body, String chatId,
                                          String senderId, String avatarUrl) {
-        // Создаём back stack: MainActivity → ChatActivity
         Intent mainIntent = new Intent(this, MainActivity.class);
         mainIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
@@ -227,8 +273,8 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, "chat_messages")
-                .setSmallIcon(R.drawable.ic_person)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_MESSAGES)
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title != null ? title : "Новое сообщение")
                 .setContentText(body != null ? body : "")
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -241,15 +287,43 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                     Bitmap circleBitmap = getCircleBitmap(bitmap);
                     builder.setLargeIcon(circleBitmap);
                 }
-
                 NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                int notificationId = chatId != null ? chatId.hashCode() : (int) System.currentTimeMillis();
-                manager.notify(notificationId, builder.build());
+                manager.notify(chatId.hashCode(), builder.build());
             });
         } else {
             NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            int notificationId = chatId != null ? chatId.hashCode() : (int) System.currentTimeMillis();
-            manager.notify(notificationId, builder.build());
+            manager.notify(chatId.hashCode(), builder.build());
+        }
+    }
+
+    private void createNotificationChannels() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel callChannel = new NotificationChannel(
+                    CHANNEL_CALLS,
+                    "Звонки",
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            callChannel.setDescription("Уведомления о входящих звонках");
+            callChannel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), null);
+
+            NotificationChannel messageChannel = new NotificationChannel(
+                    CHANNEL_MESSAGES,
+                    "Сообщения",
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            messageChannel.setDescription("Уведомления о новых сообщениях");
+
+            NotificationChannel conferenceChannel = new NotificationChannel(
+                    CHANNEL_CONFERENCE,
+                    "Приглашения в конференцию",
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            conferenceChannel.setDescription("Приглашения присоединиться к конференции");
+
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            manager.createNotificationChannel(callChannel);
+            manager.createNotificationChannel(messageChannel);
+            manager.createNotificationChannel(conferenceChannel);
         }
     }
 

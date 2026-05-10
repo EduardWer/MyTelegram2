@@ -917,11 +917,11 @@ public class ConferenceCallActivity extends AppCompatActivity {
         JSONObject json = new JSONObject();
         try {
             json.put("user_id", user.getUid());
+            json.put("inviter_id", userId);
+            json.put("inviter_name", userName);
+            json.put("room_code", roomCode);
             json.put("title", "📞 Приглашение в конференцию");
             json.put("body", userName + " приглашает вас в конференцию. Код: " + roomCode);
-            json.put("chat_id", roomCode);
-            json.put("type", "conference_invite");
-            json.put("room_code", roomCode);
 
             RequestBody body = RequestBody.create(
                     json.toString(),
@@ -929,7 +929,7 @@ public class ConferenceCallActivity extends AppCompatActivity {
             );
 
             Request request = new Request.Builder()
-                    .url("http://192.168.31.163:8000/send-to-user")
+                    .url("http://192.168.31.163:8000/send-conference-invite")  // Новый эндпоинт
                     .post(body)
                     .build();
 
@@ -949,7 +949,7 @@ public class ConferenceCallActivity extends AppCompatActivity {
             Log.e(TAG, "Error creating push notification", e);
         }
     }
-//
+
     private void showLoading(boolean show) {
         runOnUiThread(() -> {
             if (progressBar != null) {
