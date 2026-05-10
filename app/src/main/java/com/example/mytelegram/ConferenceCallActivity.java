@@ -3,30 +3,64 @@ package com.example.mytelegram;
 import static androidx.core.util.TypedValueCompat.dpToPx;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.content.pm.PackageManager;
+import android.graphics.drawable.Drawable;
 import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+
+import com.bumptech.glide.Glide;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.webrtc.*;
+
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import de.hdodenhof.circleimageview.CircleImageView;
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 public class ConferenceCallActivity extends AppCompatActivity {
 
@@ -43,6 +77,7 @@ public class ConferenceCallActivity extends AppCompatActivity {
     private ParticipantsAdapter participantsAdapter;
     private VideoCapturer videoCapturer;
     private VideoSource videoSource;
+    private ProgressBar progressBar;
     private String serverUrl;
     private boolean isCreator;
 
@@ -53,7 +88,7 @@ public class ConferenceCallActivity extends AppCompatActivity {
     private Map<String, PeerConnection> peerConnections = new HashMap<>();
     private Map<String, SurfaceViewRenderer> remoteVideoViews = new HashMap<>();
 
-    private FrameLayout localVideoContainer;
+
 
     private SurfaceViewRenderer localVideoView;
     private ImageButton btnToggleAudio, btnToggleVideo, btnSwitchCamera, btnEndCall, btnChat;
@@ -140,7 +175,7 @@ public class ConferenceCallActivity extends AppCompatActivity {
         rvParticipants.setLayoutManager(new GridLayoutManager(this, spanCount));
         participantsAdapter = new ParticipantsAdapter(participants);
         rvParticipants.setAdapter(participantsAdapter);
-
+        progressBar = findViewById(R.id.progress_bar);
         // Находим остальные кнопки
         btnToggleAudio = findViewById(R.id.btn_toggle_audio);
         btnToggleVideo = findViewById(R.id.btn_toggle_video);
@@ -168,7 +203,7 @@ public class ConferenceCallActivity extends AppCompatActivity {
         btnSwitchCamera.setOnClickListener(v -> switchCamera());
         btnEndCall.setOnClickListener(v -> endCall());
         btnChat.setOnClickListener(v -> toggleChat());
-        btnSend.setOnClickListener(v -> sendMessage());
+        btnChat.setOnClickListener(v -> loadUsersFromSameDomain());
     }
 
     private void initWebRTC() {
@@ -622,15 +657,329 @@ public class ConferenceCallActivity extends AppCompatActivity {
         chatContainer.setVisibility(chatContainer.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
     }
 
-    private void sendMessage() {
-        String message = etMessage.getText().toString().trim();
-        if (message.isEmpty()) return;
-        if (signalingClient != null) signalingClient.sendChatMessage(message);
-        chatMessages.add(new ChatMessage(userId, "Вы", message, System.currentTimeMillis()));
-        chatAdapter.notifyItemInserted(chatMessages.size() - 1);
-        rvChat.scrollToPosition(chatMessages.size() - 1);
-        etMessage.setText("");
+
+
+
+
+
+
+// логика юзеров
+
+
+
+    private void loadUsersFromSameDomain() {
+        FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
+        if (currentUser == null) {
+            Log.e(TAG, "Current user is null");
+            return;
+        }
+
+        String currentUserEmail = currentUser.getEmail();
+        String currentUserId = currentUser.getUid();
+
+        if (currentUserEmail == null) {
+            Log.e(TAG, "Current user email is null");
+            return;
+        }
+
+        String domain = currentUserEmail.split("@")[1];
+        Log.d(TAG, "🔍 Searching for users with domain: " + domain);
+
+        showLoading(true);
+
+        DatabaseReference usersRef = FirebaseDatabase.getInstance().getReference("users");
+        usersRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                showLoading(false);
+                List<User> userList = new ArrayList<>();
+
+                for (DataSnapshot userSnapshot : snapshot.getChildren()) {
+                    try {
+                        String uid = userSnapshot.child("uid").getValue(String.class);
+                        String email = userSnapshot.child("email").getValue(String.class);
+                        String username = userSnapshot.child("username").getValue(String.class);
+
+                        if (email != null && uid != null &&
+                                email.contains("@") &&
+                                email.split("@")[1].equals(domain) &&
+                                !uid.equals(currentUserId)) {
+
+                            User user = new User();
+                            user.setUid(uid);
+                            user.setEmail(email);
+                            user.setUsername(username != null ? username : email.split("@")[0]);
+                            userList.add(user);
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error parsing user: " + e.getMessage());
+                    }
+                }
+
+                // Сортируем по имени
+                Collections.sort(userList, (u1, u2) -> {
+                    if (u1.getUsername() == null) return 1;
+                    if (u2.getUsername() == null) return -1;
+                    return u1.getUsername().compareToIgnoreCase(u2.getUsername());
+                });
+
+                Log.d(TAG, "📊 Total users found: " + userList.size());
+
+                if (userList.isEmpty()) {
+                    Toast.makeText(ConferenceCallActivity.this,
+                            "📭 Нет пользователей с доменом " + domain, Toast.LENGTH_SHORT).show();
+                } else {
+                    showUserDialogWithSearch(userList);
+                }
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {
+                showLoading(false);
+                Log.e(TAG, "Error loading users: " + error.getMessage());
+                Toast.makeText(ConferenceCallActivity.this,
+                        "❌ Ошибка загрузки: " + error.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
     }
+
+    private void showUserDialogWithSearch(List<User> users) {
+        // Сохраняем оригинальный список
+        List<User> originalUsers = new ArrayList<>(users);
+
+        // Сортируем пользователей по имени
+        Collections.sort(originalUsers, (u1, u2) -> {
+            String name1 = u1.getUsername() != null ? u1.getUsername() : "";
+            String name2 = u2.getUsername() != null ? u2.getUsername() : "";
+            return name1.compareToIgnoreCase(name2);
+        });
+
+        // Создаем кастомный адаптер с красивым отображением
+        ArrayAdapter<User> adapter = new ArrayAdapter<User>(this, android.R.layout.select_dialog_item, originalUsers) {
+            @NonNull
+            @Override
+            public View getView(int position, View convertView, @NonNull ViewGroup parent) {
+                if (convertView == null) {
+                    convertView = LayoutInflater.from(getContext())
+                            .inflate(R.layout.item_user_dialog, parent, false);
+                }
+
+                User user = getItem(position);
+
+                CircleImageView ivAvatar = convertView.findViewById(R.id.iv_avatar);
+                TextView tvName = convertView.findViewById(R.id.tv_user_name);
+                TextView tvEmail = convertView.findViewById(R.id.tv_user_email);
+
+                tvName.setText(user.getUsername() != null ? user.getUsername() : "Без имени");
+                tvEmail.setText(user.getEmail() != null ? user.getEmail() : "");
+
+                // Загружаем аватар (если есть)
+                if (user.getAvatarUrls() != null && !user.getAvatarUrls().isEmpty()) {
+                    Glide.with(ConferenceCallActivity.this)
+                            .load(user.getAvatarUrls())
+                            .placeholder(R.drawable.ic_person)
+                            .error(R.drawable.ic_person)
+                            .circleCrop()
+                            .into(ivAvatar);
+                } else {
+                    ivAvatar.setImageResource(R.drawable.ic_person);
+                }
+
+                return convertView;
+            }
+        };
+
+        // Создаем поле для поиска с иконкой
+        LinearLayout searchLayout = new LinearLayout(this);
+        searchLayout.setOrientation(LinearLayout.VERTICAL);
+        searchLayout.setPadding(16, 16, 16, 8);
+
+        EditText searchInput = new EditText(this);
+        searchInput.setHint("🔍 Поиск по имени или email");
+        searchInput.setBackgroundResource(android.R.drawable.editbox_dropdown_dark_frame);
+        searchInput.setPadding(24, 16, 24, 16);
+
+        // Иконка поиска в поле
+        Drawable searchIcon = getResources().getDrawable(android.R.drawable.ic_menu_search, null);
+        searchIcon.setBounds(0, 0, 40, 40);
+        searchInput.setCompoundDrawables(searchIcon, null, null, null);
+        searchInput.setCompoundDrawablePadding(16);
+
+        searchLayout.addView(searchInput);
+
+        // Счетчик результатов
+        TextView tvCounter = new TextView(this);
+        tvCounter.setText("👥 " + originalUsers.size() + " участников");
+        tvCounter.setTextColor(getColor(android.R.color.white));
+        tvCounter.setTextSize(12);
+        tvCounter.setPadding(16, 8, 16, 8);
+        tvCounter.setBackgroundColor(getColor(R.color.teal_700));
+        tvCounter.setVisibility(View.GONE);
+        searchLayout.addView(tvCounter);
+
+        // Настраиваем диалог
+        AlertDialog.Builder builder = new AlertDialog.Builder(this, R.style.CustomAlertDialog);
+        builder.setTitle("✨ ПРИГЛАСИТЬ УЧАСТНИКА")
+                .setView(searchLayout)
+                .setAdapter(adapter, (dialog, which) -> {
+                    User selectedUser = adapter.getItem(which);
+                    if (selectedUser != null) {
+                        sendInvitation(selectedUser);
+                    }
+                })
+                .setNegativeButton("Отмена", (dialog, which) -> dialog.dismiss())
+                .setIcon(R.drawable.ic_group_add);
+
+        AlertDialog dialog = builder.create();
+        dialog.show();
+
+        // Настраиваем цвет кнопок
+        Button negativeButton = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+        if (negativeButton != null) {
+            negativeButton.setTextColor(getColor(android.R.color.holo_red_dark));
+        }
+
+        // Добавляем фильтрацию при вводе текста
+        searchInput.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                String query = s.toString().toLowerCase().trim();
+                List<User> filtered = new ArrayList<>();
+
+                if (query.isEmpty()) {
+                    filtered.addAll(originalUsers);
+                    tvCounter.setVisibility(View.GONE);
+                } else {
+                    for (User user : originalUsers) {
+                        String name = user.getUsername() != null ? user.getUsername().toLowerCase() : "";
+                        String email = user.getEmail() != null ? user.getEmail().toLowerCase() : "";
+
+                        if (name.contains(query) || email.contains(query)) {
+                            filtered.add(user);
+                        }
+                    }
+                    tvCounter.setVisibility(View.VISIBLE);
+                    tvCounter.setText("🔍 Найдено: " + filtered.size() + " из " + originalUsers.size());
+                }
+
+                adapter.clear();
+                adapter.addAll(filtered);
+                adapter.notifyDataSetChanged();
+
+                // Обновляем заголовок диалога
+                if (filtered.size() > 0) {
+                    dialog.setTitle("✨ ПРИГЛАСИТЬ УЧАСТНИКА (" + filtered.size() + ")");
+                } else {
+                    dialog.setTitle("✨ ПРИГЛАСИТЬ УЧАСТНИКА");
+                }
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {}
+        });
+    }
+
+    private void showUserDialog(List<User> users) {
+        showUserDialogWithSearch(users);
+    }
+
+    private void sendInvitation(User user) {
+        showLoading(true);
+
+        Map<String, Object> invitation = new HashMap<>();
+        invitation.put("roomCode", roomCode);
+        invitation.put("inviterId", userId);
+        invitation.put("inviterName", userName);
+        invitation.put("roomName", "Конференция " + roomCode);
+        invitation.put("timestamp", System.currentTimeMillis());
+
+        DatabaseReference userRef = FirebaseDatabase.getInstance().getReference("users")
+                .child(user.getUid()).child("invitations").push();
+
+        userRef.setValue(invitation)
+                .addOnSuccessListener(aVoid -> {
+                    showLoading(false);
+                    Toast.makeText(this, "✅ Приглашение отправлено пользователю " + user.getUsername(), Toast.LENGTH_LONG).show();
+                    sendPushNotification(user, roomCode);
+                })
+                .addOnFailureListener(e -> {
+                    showLoading(false);
+                    Toast.makeText(this, "❌ Ошибка отправки: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+    }
+
+    private void sendPushNotification(User user, String roomCode) {
+        OkHttpClient client = new OkHttpClient();
+
+        JSONObject json = new JSONObject();
+        try {
+            json.put("user_id", user.getUid());
+            json.put("title", "📞 Приглашение в конференцию");
+            json.put("body", userName + " приглашает вас в конференцию. Код: " + roomCode);
+            json.put("chat_id", roomCode);
+            json.put("type", "conference_invite");
+            json.put("room_code", roomCode);
+
+            RequestBody body = RequestBody.create(
+                    json.toString(),
+                    MediaType.parse("application/json; charset=utf-8")
+            );
+
+            Request request = new Request.Builder()
+                    .url("http://192.168.31.163:8000/send-to-user")
+                    .post(body)
+                    .build();
+
+            client.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    Log.e(TAG, "Push notification failed: " + e.getMessage());
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) {
+                    Log.d(TAG, "✅ Push notification sent");
+                    response.close();
+                }
+            });
+        } catch (JSONException e) {
+            Log.e(TAG, "Error creating push notification", e);
+        }
+    }
+
+    private void showLoading(boolean show) {
+        runOnUiThread(() -> {
+            if (progressBar != null) {
+                progressBar.setVisibility(show ? View.VISIBLE : View.GONE);
+            }
+        });
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     private void endCall() {
         if (signalingClient != null) {

@@ -95,6 +95,8 @@ public class User implements Parcelable {
 
 
 
+
+
     public void setAvatarUrls(String avatarUrl) {
         this.getAvatarUrl = avatarUrl;
     }
