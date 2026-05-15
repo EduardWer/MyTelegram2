@@ -79,7 +79,7 @@ public class GalleryFragment extends Fragment {
             int dataIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
             int idIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
 
-            while (cursor.moveToNext() && mediaItems.size() < 50) {
+            while (cursor.moveToNext()) {
                 String path = cursor.getString(dataIndex);
                 long id = cursor.getLong(idIndex);
 
@@ -118,7 +118,7 @@ public class GalleryFragment extends Fragment {
             int dataIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATA);
             int idIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID);
 
-            while (cursor.moveToNext() && mediaItems.size() < 50) {
+            while (cursor.moveToNext() ) {
                 String path = cursor.getString(dataIndex);
                 long id = cursor.getLong(idIndex);
 

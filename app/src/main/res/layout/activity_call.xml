@@ -318,7 +318,7 @@
             android:layout_margin="8dp"
             android:background="@drawable/circle_button_bg"
             android:padding="12dp"
-            android:src="@drawable/ic_video"
+            android:src="@drawable/ic_video_call"
             app:tint="#FFFFFF" />
 
         <ImageButton

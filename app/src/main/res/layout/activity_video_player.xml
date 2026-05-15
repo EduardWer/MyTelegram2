@@ -30,13 +30,13 @@
         <!-- Заголовок видео -->
         <TextView
             android:id="@+id/titleText"
-            android:layout_width="0dp"
+            android:layout_width="234dp"
             android:layout_height="wrap_content"
-            android:layout_toEndOf="@id/backButton"
-            android:layout_toStartOf="@id/downloadbutton"
             android:layout_centerVertical="true"
             android:layout_marginStart="16dp"
-            android:layout_marginEnd="8dp"
+            android:layout_marginEnd="25dp"
+            android:layout_toStartOf="@id/downloadbutton"
+            android:layout_toEndOf="@id/backButton"
             android:ellipsize="end"
             android:maxLines="1"
             android:textColor="@android:color/white"
@@ -45,8 +45,8 @@
         <!-- Кнопка скачивания -->
         <Button
             android:id="@+id/downloadbutton"
-            android:layout_width="80dp"
-            android:layout_height="40dp"
+            android:layout_width="104dp"
+            android:layout_height="38dp"
             android:layout_alignParentEnd="true"
             android:layout_centerVertical="true"
             android:backgroundTint="@color/white"
